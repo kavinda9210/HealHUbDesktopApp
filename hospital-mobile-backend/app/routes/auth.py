@@ -122,16 +122,18 @@ def register():
             logger.warning(f"Failed to send verification email to {user_data.email}")
         
         # Create user profile based on role
-        if role_value == 'patient' and user_data.full_name and user_data.phone:
-            # Create patient record
+        if role_value == 'patient':
+            # Create patient record (patient fields are validated by UserCreate)
             SupabaseClient.execute_query(
                 'patients',
                 'insert',
                 user_id=created_user['user_id'],
                 full_name=user_data.full_name,
                 phone=user_data.phone,
-                dob='2000-01-01',  # Default, should be updated later
-                gender='Other',
+                dob=user_data.dob.isoformat() if user_data.dob else None,
+                gender=user_data.gender.value if getattr(user_data, 'gender', None) else None,
+                address=user_data.address,
+                emergency_contact=user_data.emergency_contact,
                 created_at=sl_now_iso()
             )
         elif role_value == 'ambulance_staff' and user_data.full_name and user_data.phone:

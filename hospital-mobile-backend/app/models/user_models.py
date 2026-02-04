@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr, Field, validator, field_validator
+from pydantic import BaseModel, EmailStr, Field, validator, field_validator, model_validator
 from typing import Optional, List, Dict, Any
 from datetime import date, datetime
 import re
@@ -32,6 +32,33 @@ class UserCreate(UserBase):
     password: str = Field(..., min_length=8, max_length=100)
     full_name: Optional[str] = Field(None, min_length=2, max_length=100)
     phone: Optional[str] = Field(None, min_length=10, max_length=20)
+
+    # Patient profile fields (required when role == patient)
+    dob: Optional[date] = None
+    gender: Optional[Gender] = None
+    address: Optional[str] = None
+    emergency_contact: Optional[str] = Field(None, min_length=10, max_length=20)
+
+    @model_validator(mode='after')
+    def validate_patient_fields(self):
+        role_value = self.role.value if hasattr(self.role, 'value') else str(self.role)
+        if role_value == 'patient':
+            missing = []
+            if not self.full_name:
+                missing.append('full_name')
+            if not self.phone:
+                missing.append('phone')
+            if self.dob is None:
+                missing.append('dob')
+            if self.gender is None:
+                missing.append('gender')
+            if not self.address:
+                missing.append('address')
+
+            if missing:
+                raise ValueError(f"Missing required fields for patient registration: {', '.join(missing)}")
+
+        return self
     
     @field_validator('password')
     def validate_password_strength(cls, v):
