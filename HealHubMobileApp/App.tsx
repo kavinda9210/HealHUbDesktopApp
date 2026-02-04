@@ -1,8 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 
 import { View, StyleSheet } from 'react-native';
-import { SafeAreaProvider } from 'react-native-safe-area-context'; // Add this
-
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import * as SplashScreen from 'expo-splash-screen';
 import { LanguageProvider } from './context/LanguageContext';
 import HealHubLogo from './components/HealHubLogo';
@@ -83,7 +82,7 @@ function ForceNativeSplashApp() {
 
   // Show language selection
   if (screen === 'language') {
-    return <LanguageSelector onLanguageSelected={handleLanguageSelected} />;
+    return <LanguageSelector onContinue={handleLanguageSelected} />;
   }
 
   // Show main app

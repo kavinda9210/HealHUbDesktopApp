@@ -27,7 +27,7 @@ const translations = {
     selected: 'Selected',
   },
   sinhala: {
-    welcome: 'හීල්හබ් වෙත සාදරයෙන් පිළිගනිමු',
+    welcome: 'HealHub වෙත සාදරයෙන් පිළිගනිමු',
     select_language: 'ඔබගේ භාෂාව තෝරන්න',
     continue: 'කරගෙන යන්න',
     english: 'ඉංග්‍රීසි',
@@ -41,7 +41,7 @@ const translations = {
     selected: 'තෝරාගත්',
   },
   tamil: {
-    welcome: 'ஹீல்ஹப்பிற்கு வரவேற்கிறோம்',
+    welcome: 'HealHubக்கு வரவேற்கிறோம்',
     select_language: 'உங்கள் மொழியைத் தேர்ந்தெடுக்கவும்',
     continue: 'தொடரவும்',
     english: 'ஆங்கிலம்',
