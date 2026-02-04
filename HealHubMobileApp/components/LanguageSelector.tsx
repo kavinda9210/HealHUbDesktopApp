@@ -6,8 +6,8 @@ import {
   ScrollView,
   TouchableOpacity,
   StatusBar,
-  Platform,
 } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLanguage, Language } from '../context/LanguageContext';
 
 interface LanguageSelectorProps {
@@ -16,6 +16,7 @@ interface LanguageSelectorProps {
 
 const LanguageSelector = ({ onContinue }: LanguageSelectorProps) => {
   const { language, setLanguage, t } = useLanguage();
+  const insets = useSafeAreaInsets();
   const [selectedLang, setSelectedLang] = useState<Language>(language);
 
   const languages: { code: Language; name: string; flag: string }[] = [
@@ -37,8 +38,8 @@ const LanguageSelector = ({ onContinue }: LanguageSelectorProps) => {
   };
 
   return (
-    <View style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
+    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
+      <StatusBar barStyle="dark-content" backgroundColor="#ffffff" translucent={false} />
       
       <View style={styles.header}>
         <Text style={styles.welcome}>
@@ -55,7 +56,7 @@ const LanguageSelector = ({ onContinue }: LanguageSelectorProps) => {
 
       <ScrollView
         style={styles.scroll}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: Math.max(40, insets.bottom + 24) }]}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
@@ -137,7 +138,7 @@ const LanguageSelector = ({ onContinue }: LanguageSelectorProps) => {
            'You can change language later'}
         </Text>
       </ScrollView>
-    </View>
+    </SafeAreaView>
   );
 };
 
@@ -145,7 +146,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#ffffff',
-    paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 40,
   },
   header: {
     paddingTop: 20,

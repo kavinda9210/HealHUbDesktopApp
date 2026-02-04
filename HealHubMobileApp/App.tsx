@@ -6,6 +6,7 @@ import * as SplashScreen from 'expo-splash-screen';
 import { LanguageProvider } from './context/LanguageContext';
 import HealHubLogo from './components/HealHubLogo';
 import LanguageSelector from './components/LanguageSelector';
+import IntroSlides from './components/IntroSlides';
 import MainApp from './components/MainApp';
 
 // CRITICAL: Prevent auto-hide AND keep native splash visible
@@ -24,7 +25,7 @@ export default function AppWrapper() {
 }
 
 function ForceNativeSplashApp() {
-  const [screen, setScreen] = useState<'native-splash' | 'custom-splash' | 'language' | 'main'>('native-splash');
+  const [screen, setScreen] = useState<'native-splash' | 'custom-splash' | 'language' | 'intro' | 'main'>('native-splash');
   const splashTimer = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
@@ -62,8 +63,8 @@ function ForceNativeSplashApp() {
   }, []);
 
   const handleLanguageSelected = () => {
-    console.log('5. Language selected, showing main app');
-    setScreen('main');
+    console.log('5. Language selected, showing intro slides');
+    setScreen('intro');
   };
 
   // Show native splash (invisible to us, controlled by Expo)
@@ -83,6 +84,11 @@ function ForceNativeSplashApp() {
   // Show language selection
   if (screen === 'language') {
     return <LanguageSelector onContinue={handleLanguageSelected} />;
+  }
+
+  // Show intro slides
+  if (screen === 'intro') {
+    return <IntroSlides onDone={() => setScreen('main')} />;
   }
 
   // Show main app

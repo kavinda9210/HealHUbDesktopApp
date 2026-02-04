@@ -3,15 +3,16 @@ import {
   View,
   Text,
   StyleSheet,
-  SafeAreaView,
   StatusBar,
   ScrollView,
   TouchableOpacity,
 } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLanguage } from '../context/LanguageContext';
 
 const MainApp = () => {
   const { language, setLanguage, t } = useLanguage();
+  const insets = useSafeAreaInsets();
 
   const features = [
     { icon: '👨‍⚕️', title: 'Doctor Appointments', color: '#E8F5E9' },
@@ -23,8 +24,8 @@ const MainApp = () => {
   ];
 
   return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
+    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
+      <StatusBar barStyle="dark-content" backgroundColor="#ffffff" translucent={false} />
       
       <View style={styles.header}>
         <View style={styles.headerTop}>
@@ -108,7 +109,7 @@ const MainApp = () => {
         </View>
       </ScrollView>
 
-      <View style={styles.bottomNav}>
+      <View style={[styles.bottomNav, { paddingBottom: Math.max(12, insets.bottom) }]}>
         <TouchableOpacity style={styles.navItem}>
           <Text style={styles.navIcon}>🏠</Text>
           <Text style={styles.navText}>
