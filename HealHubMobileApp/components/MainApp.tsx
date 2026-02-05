@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -9,10 +9,49 @@ import {
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLanguage } from '../context/LanguageContext';
+import AlertMessage, { AlertVariant } from './alerts/AlertMessage';
 
-const MainApp = () => {
+type MainAppProps = {
+  onLogout?: () => void;
+  onOpenPatientDashboard?: () => void;
+};
+
+const MainApp: React.FC<MainAppProps> = ({ onLogout, onOpenPatientDashboard }) => {
   const { language, setLanguage, t } = useLanguage();
   const insets = useSafeAreaInsets();
+  const alertTimer = useRef<NodeJS.Timeout | null>(null);
+  const [alertVisible, setAlertVisible] = useState(false);
+  const [alertVariant, setAlertVariant] = useState<AlertVariant>('info');
+  const [alertTitle, setAlertTitle] = useState<string | undefined>(undefined);
+  const [alertMessage, setAlertMessage] = useState('');
+
+  const showAlert = (variant: AlertVariant) => {
+    if (alertTimer.current) {
+      clearTimeout(alertTimer.current);
+      alertTimer.current = null;
+    }
+
+    setAlertVariant(variant);
+    setAlertVisible(true);
+
+    if (variant === 'success') {
+      setAlertTitle(language === 'sinhala' ? 'සාර්ථකයි' : language === 'tamil' ? 'வெற்றி' : 'Success');
+      setAlertMessage(language === 'sinhala' ? 'ඇලර්ට් පණිවිඩය සාර්ථක ලෙස පෙන්වයි.' : language === 'tamil' ? 'எச்சரிக்கை செய்தி வெற்றிகரமாக காட்டப்பட்டது.' : 'Alert message shown successfully.');
+    } else if (variant === 'error') {
+      setAlertTitle(language === 'sinhala' ? 'දෝෂයක්' : language === 'tamil' ? 'பிழை' : 'Error');
+      setAlertMessage(language === 'sinhala' ? 'මෙය පරීක්ෂණ දෝෂ ඇලර්ට් එකක්.' : language === 'tamil' ? 'இது சோதனை பிழை எச்சரிக்கை.' : 'This is a test error alert.');
+    } else if (variant === 'warning') {
+      setAlertTitle(language === 'sinhala' ? 'අවවාදය' : language === 'tamil' ? 'எச்சரிக்கை' : 'Warning');
+      setAlertMessage(language === 'sinhala' ? 'මෙය පරීක්ෂණ අවවාද ඇලර්ට් එකක්.' : language === 'tamil' ? 'இது சோதனை எச்சரிக்கை.' : 'This is a test warning alert.');
+    } else {
+      setAlertTitle(language === 'sinhala' ? 'තොරතුරු' : language === 'tamil' ? 'தகவல்' : 'Info');
+      setAlertMessage(language === 'sinhala' ? 'මෙය පරීක්ෂණ තොරතුරු ඇලර්ට් එකක්.' : language === 'tamil' ? 'இது சோதனை தகவல் எச்சரிக்கை.' : 'This is a test info alert.');
+    }
+
+    alertTimer.current = setTimeout(() => {
+      setAlertVisible(false);
+    }, 2500);
+  };
 
   const features = [
     { icon: '👨‍⚕️', title: 'Doctor Appointments', color: '#E8F5E9' },
@@ -26,6 +65,15 @@ const MainApp = () => {
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       <StatusBar barStyle="dark-content" backgroundColor="#ffffff" translucent={false} />
+
+      <AlertMessage
+        visible={alertVisible}
+        variant={alertVariant}
+        mode="toast"
+        title={alertTitle}
+        message={alertMessage}
+        onClose={() => setAlertVisible(false)}
+      />
       
       <View style={styles.header}>
         <View style={styles.headerTop}>
@@ -34,21 +82,78 @@ const MainApp = () => {
              language === 'tamil' ? 'வணக்கம்!' : 
              'Hello!'}
           </Text>
-          <TouchableOpacity
-            style={styles.languageButton}
-            onPress={() => setLanguage(language === 'english' ? 'sinhala' : 'english')}
-          >
-            <Text style={styles.languageButtonText}>
-              {language === 'english' ? 'සිංහල' : 
-               language === 'sinhala' ? 'தமிழ்' : 
-               'English'}
-            </Text>
-          </TouchableOpacity>
+          <View style={styles.headerActions}>
+            <TouchableOpacity
+              style={styles.languageButton}
+              onPress={() => setLanguage(language === 'english' ? 'sinhala' : 'english')}
+            >
+              <Text style={styles.languageButtonText}>
+                {language === 'english' ? 'සිංහල' : 
+                 language === 'sinhala' ? 'தமிழ்' : 
+                 'English'}
+              </Text>
+            </TouchableOpacity>
+
+            {!!onLogout && (
+              <TouchableOpacity style={styles.logoutButton} onPress={onLogout}>
+                <Text style={styles.logoutButtonText}>
+                  {language === 'sinhala' ? 'පිටවීම' : language === 'tamil' ? 'வெளியேறு' : 'Logout'}
+                </Text>
+              </TouchableOpacity>
+            )}
+          </View>
         </View>
         <Text style={styles.welcomeMessage}>{t('healthcare')}</Text>
       </View>
 
       <ScrollView style={styles.content}>
+        {!!onOpenPatientDashboard && (
+          <View style={styles.dashboardCtaWrap}>
+            <TouchableOpacity style={styles.dashboardCtaButton} activeOpacity={0.85} onPress={onOpenPatientDashboard}>
+              <Text style={styles.dashboardCtaTitle}>
+                {language === 'sinhala'
+                  ? 'රෝගී පුවරුව බලන්න'
+                  : language === 'tamil'
+                    ? 'நோயாளர் டாஷ்போர்டை காண்க'
+                    : 'View Patient Dashboard'}
+              </Text>
+              <Text style={styles.dashboardCtaSubtitle}>
+                {language === 'sinhala'
+                  ? 'Home / Appointment / Profile ටැබ් පරීක්ෂා කරන්න'
+                  : language === 'tamil'
+                    ? 'Home / Appointment / Profile டாப்களை சோதிக்கவும்'
+                    : 'Test Home / Appointment / Profile tabs'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        <View style={styles.testAlertsSection}>
+          <Text style={styles.sectionTitle}>
+            {language === 'sinhala' ? 'ඇලර්ට් පරීක්ෂා කිරීම' :
+             language === 'tamil' ? 'எச்சரிக்கை சோதனை' :
+             'Test Alerts'}
+          </Text>
+
+          <View style={styles.testAlertsRow}>
+            <TouchableOpacity style={[styles.testAlertButton, styles.testAlertSuccess]} onPress={() => showAlert('success')}>
+              <Text style={styles.testAlertButtonText}>Success</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.testAlertButton, styles.testAlertInfo]} onPress={() => showAlert('info')}>
+              <Text style={styles.testAlertButtonText}>Info</Text>
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.testAlertsRow}>
+            <TouchableOpacity style={[styles.testAlertButton, styles.testAlertWarning]} onPress={() => showAlert('warning')}>
+              <Text style={styles.testAlertButtonText}>Warning</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.testAlertButton, styles.testAlertError]} onPress={() => showAlert('error')}>
+              <Text style={styles.testAlertButtonText}>Error</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
         <View style={styles.quickActions}>
           <Text style={styles.sectionTitle}>
             {language === 'sinhala' ? 'වේගවතුරු ක්‍රියාමාර්ග' :
@@ -159,6 +264,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 8,
   },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
   greeting: {
     fontSize: 24,
     fontWeight: 'bold',
@@ -177,6 +287,17 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     fontSize: 14,
   },
+  logoutButton: {
+    backgroundColor: '#dc2626',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+  },
+  logoutButtonText: {
+    color: '#ffffff',
+    fontWeight: '800',
+    fontSize: 14,
+  },
   welcomeMessage: {
     fontSize: 16,
     color: '#666',
@@ -184,6 +305,63 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
     padding: 20,
+  },
+  testAlertsSection: {
+    marginBottom: 26,
+    padding: 16,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    backgroundColor: '#f8fafc',
+  },
+  dashboardCtaWrap: {
+    marginBottom: 16,
+  },
+  dashboardCtaButton: {
+    backgroundColor: '#2E8B57',
+    borderRadius: 18,
+    paddingVertical: 16,
+    paddingHorizontal: 16,
+  },
+  dashboardCtaTitle: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: '900',
+    marginBottom: 4,
+  },
+  dashboardCtaSubtitle: {
+    color: '#e5e7eb',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  testAlertsRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 12,
+  },
+  testAlertButton: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  testAlertButtonText: {
+    color: '#ffffff',
+    fontWeight: '800',
+    fontSize: 14,
+  },
+  testAlertSuccess: {
+    backgroundColor: '#16a34a',
+  },
+  testAlertInfo: {
+    backgroundColor: '#2563eb',
+  },
+  testAlertWarning: {
+    backgroundColor: '#f59e0b',
+  },
+  testAlertError: {
+    backgroundColor: '#dc2626',
   },
   sectionTitle: {
     fontSize: 20,

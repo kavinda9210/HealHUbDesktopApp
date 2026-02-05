@@ -4,10 +4,19 @@ import { View, StyleSheet } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import * as SplashScreen from 'expo-splash-screen';
 import { LanguageProvider } from './context/LanguageContext';
+import { ThemeProvider } from './context/ThemeContext';
 import HealHubLogo from './components/HealHubLogo';
 import LanguageSelector from './components/LanguageSelector';
 import IntroSlides from './components/IntroSlides';
 import MainApp from './components/MainApp';
+import Login from './components/auth/Login';
+import ForgotPassword from './components/auth/ForgotPassword';
+import Verification from './components/auth/Verification';
+import Register from './components/auth/Register';
+import EmailVerification from './components/auth/EmailVerification';
+import Patientdashboard from './screens/Patientdashboard';
+import AIWoundorRashDetect from './screens/AIWoundorRashDetect';
+import Notifications from './screens/Notifications';
 
 // CRITICAL: Prevent auto-hide AND keep native splash visible
 SplashScreen.preventAutoHideAsync()
@@ -16,17 +25,21 @@ SplashScreen.preventAutoHideAsync()
 
 export default function AppWrapper() {
   return (
-    <LanguageProvider>
-      <SafeAreaProvider>
-        <ForceNativeSplashApp />
-      </SafeAreaProvider>
-    </LanguageProvider>
+    <ThemeProvider>
+      <LanguageProvider>
+        <SafeAreaProvider>
+          <ForceNativeSplashApp />
+        </SafeAreaProvider>
+      </LanguageProvider>
+    </ThemeProvider>
   );
 }
 
 function ForceNativeSplashApp() {
-  const [screen, setScreen] = useState<'native-splash' | 'custom-splash' | 'language' | 'intro' | 'main'>('native-splash');
+  const [screen, setScreen] = useState<'native-splash' | 'custom-splash' | 'language' | 'intro' | 'login' | 'forgot-password' | 'verification' | 'register' | 'email-verification' | 'patient-dashboard' | 'ai-detect' | 'notifications' | 'main'>('native-splash');
   const splashTimer = useRef<NodeJS.Timeout | null>(null);
+  const [resetEmail, setResetEmail] = useState<string>('');
+  const [registerEmail, setRegisterEmail] = useState<string>('');
 
   useEffect(() => {
     console.log('=== SPLASH SCREEN FLOW START ===');
@@ -67,6 +80,26 @@ function ForceNativeSplashApp() {
     setScreen('intro');
   };
 
+  const handleLogin = () => {
+    console.log('Login pressed (UI only), entering main app');
+    setScreen('main');
+  };
+
+  const handleForgotPassword = () => {
+    console.log('Forgot password pressed, showing forgot password screen');
+    setScreen('forgot-password');
+  };
+
+  const handleRegister = () => {
+    console.log('Register pressed (UI only)');
+    setScreen('register');
+  };
+
+  const handleIntroDone = () => {
+    console.log('Intro completed, showing login');
+    setScreen('login');
+  };
+
   // Show native splash (invisible to us, controlled by Expo)
   if (screen === 'native-splash') {
     return null; // Native splash is showing
@@ -88,11 +121,110 @@ function ForceNativeSplashApp() {
 
   // Show intro slides
   if (screen === 'intro') {
-    return <IntroSlides onDone={() => setScreen('main')} />;
+    return <IntroSlides onDone={handleIntroDone} />;
+  }
+
+  // Show login screen
+  if (screen === 'login') {
+    return (
+      <Login
+        onLogin={handleLogin}
+        onForgotPassword={handleForgotPassword}
+        onRegister={handleRegister}
+      />
+    );
+  }
+
+  // Show forgot password screen
+  if (screen === 'forgot-password') {
+    return (
+      <ForgotPassword
+        onSendVerification={(email) => {
+          console.log('Send verification pressed (UI only). Email:', email);
+          setResetEmail(email);
+          setScreen('verification');
+        }}
+        onBack={() => setScreen('login')}
+      />
+    );
+  }
+
+  // Show verification screen
+  if (screen === 'verification') {
+    return (
+      <Verification
+        email={resetEmail}
+        onVerify={({ email, code, password, confirmPassword }) => {
+          console.log('Verify pressed (UI only):', { email, code, passwordLen: password.length, confirmPasswordLen: confirmPassword.length });
+          setScreen('login');
+        }}
+        onBack={() => setScreen('forgot-password')}
+      />
+    );
+  }
+
+  // Show register screen
+  if (screen === 'register') {
+    return (
+      <Register
+        onRegister={({ name, email, password, confirmPassword }) => {
+          console.log('Register pressed (UI only):', {
+            name,
+            email,
+            passwordLen: password.length,
+            confirmPasswordLen: confirmPassword.length,
+          });
+          setRegisterEmail(email);
+          setScreen('email-verification');
+        }}
+        onBack={() => setScreen('login')}
+      />
+    );
+  }
+
+  // Show email verification (after register)
+  if (screen === 'email-verification') {
+    return (
+      <EmailVerification
+        email={registerEmail}
+        onVerify={({ email, code }) => {
+          console.log('Email verification pressed (UI only):', { email, code });
+          setScreen('main');
+        }}
+        onBack={() => setScreen('register')}
+      />
+    );
   }
 
   // Show main app
-  return <MainApp />;
+  if (screen === 'main') {
+    return (
+      <MainApp
+        onLogout={() => setScreen('login')}
+        onOpenPatientDashboard={() => setScreen('patient-dashboard')}
+      />
+    );
+  }
+
+  if (screen === 'patient-dashboard') {
+    return (
+      <Patientdashboard
+        onOpenAiDetect={() => setScreen('ai-detect')}
+        onOpenNotifications={() => setScreen('notifications')}
+        onLogout={() => setScreen('login')}
+      />
+    );
+  }
+
+  if (screen === 'ai-detect') {
+    return <AIWoundorRashDetect onBack={() => setScreen('patient-dashboard')} />;
+  }
+
+  if (screen === 'notifications') {
+    return <Notifications onBack={() => setScreen('patient-dashboard')} />;
+  }
+
+  return <MainApp onLogout={() => setScreen('login')} />;
 }
 
 const styles = StyleSheet.create({
