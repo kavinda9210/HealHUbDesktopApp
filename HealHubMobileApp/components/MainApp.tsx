@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -6,10 +6,14 @@ import {
   StatusBar,
   ScrollView,
   TouchableOpacity,
+  Platform,
+  TextInput,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLanguage } from '../context/LanguageContext';
 import AlertMessage, { AlertVariant } from './alerts/AlertMessage';
+import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
+import { cancelAllAlarmsAsync, listScheduledAlarmsAsync, scheduleAlarmAtAsync, scheduleAlarmInSecondsAsync } from '../utils/alarms';
 
 type MainAppProps = {
   onLogout?: () => void;
@@ -24,6 +28,44 @@ const MainApp: React.FC<MainAppProps> = ({ onLogout, onOpenPatientDashboard }) =
   const [alertVariant, setAlertVariant] = useState<AlertVariant>('info');
   const [alertTitle, setAlertTitle] = useState<string | undefined>(undefined);
   const [alertMessage, setAlertMessage] = useState('');
+
+  const [alarmTitle, setAlarmTitle] = useState('HealHub Alarm');
+  const [alarmBody, setAlarmBody] = useState('This is a test alarm notification');
+  const [alarmDate, setAlarmDate] = useState<Date>(new Date(Date.now() + 60_000));
+  const [showAlarmDatePicker, setShowAlarmDatePicker] = useState(false);
+  const [showAlarmTimePicker, setShowAlarmTimePicker] = useState(false);
+  const [scheduledCount, setScheduledCount] = useState<number>(0);
+
+  const alarmTesterTitle = useMemo(() => {
+    if (language === 'sinhala') return 'ඇලර්ම් පරීක්ෂා කිරීම';
+    if (language === 'tamil') return 'அலாரம் சோதனை';
+    return 'Alarm tester';
+  }, [language]);
+
+  const refreshScheduled = async () => {
+    try {
+      const list = await listScheduledAlarmsAsync();
+      setScheduledCount(list.length);
+    } catch (e) {
+      console.log('listScheduledAlarmsAsync failed:', e);
+    }
+  };
+
+  const onAlarmDateChange = (_event: DateTimePickerEvent, date?: Date) => {
+    if (Platform.OS !== 'ios') setShowAlarmDatePicker(false);
+    if (!date) return;
+    const next = new Date(alarmDate);
+    next.setFullYear(date.getFullYear(), date.getMonth(), date.getDate());
+    setAlarmDate(next);
+  };
+
+  const onAlarmTimeChange = (_event: DateTimePickerEvent, time?: Date) => {
+    if (Platform.OS !== 'ios') setShowAlarmTimePicker(false);
+    if (!time) return;
+    const next = new Date(alarmDate);
+    next.setHours(time.getHours(), time.getMinutes(), 0, 0);
+    setAlarmDate(next);
+  };
 
   const showAlert = (variant: AlertVariant) => {
     if (alertTimer.current) {
@@ -129,6 +171,142 @@ const MainApp: React.FC<MainAppProps> = ({ onLogout, onOpenPatientDashboard }) =
         )}
 
         <View style={styles.testAlertsSection}>
+          <Text style={styles.sectionTitle}>{alarmTesterTitle}</Text>
+
+          <View style={styles.alarmInputs}>
+            <Text style={styles.alarmInputLabel}>
+              {language === 'sinhala' ? 'මාතෘකාව' : language === 'tamil' ? 'தலைப்பு' : 'Title'}
+            </Text>
+            <TextInput
+              value={alarmTitle}
+              onChangeText={setAlarmTitle}
+              placeholder={language === 'sinhala' ? 'ඇලර්ම් මාතෘකාව' : language === 'tamil' ? 'அலாரம் தலைப்பு' : 'Alarm title'}
+              placeholderTextColor="#94a3b8"
+              style={styles.alarmInput}
+            />
+
+            <Text style={[styles.alarmInputLabel, { marginTop: 10 }]}
+            >
+              {language === 'sinhala' ? 'පණිවිඩය' : language === 'tamil' ? 'செய்தி' : 'Message'}
+            </Text>
+            <TextInput
+              value={alarmBody}
+              onChangeText={setAlarmBody}
+              placeholder={language === 'sinhala' ? 'ඇලර්ම් පණිවිඩය' : language === 'tamil' ? 'அலாரம் செய்தி' : 'Alarm message'}
+              placeholderTextColor="#94a3b8"
+              style={[styles.alarmInput, { height: 44 }]}
+            />
+          </View>
+
+          <View style={styles.alarmRow}>
+            <TouchableOpacity
+              style={styles.alarmButton}
+              activeOpacity={0.85}
+              onPress={async () => {
+                try {
+                  await scheduleAlarmInSecondsAsync({ title: alarmTitle, body: alarmBody, seconds: 10 });
+                  showAlert('success');
+                  await refreshScheduled();
+                } catch (e) {
+                  console.log('scheduleAlarmInSecondsAsync failed:', e);
+                  showAlert('error');
+                }
+              }}
+            >
+              <Text style={styles.alarmButtonText}>
+                {language === 'sinhala' ? 'තත්පර 10කින්' : language === 'tamil' ? '10 விநாடிகளில்' : 'In 10s'}
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.alarmButton, { backgroundColor: '#0ea5e9' }]}
+              activeOpacity={0.85}
+              onPress={async () => {
+                try {
+                  await scheduleAlarmAtAsync({ title: alarmTitle, body: alarmBody, date: alarmDate });
+                  showAlert('success');
+                  await refreshScheduled();
+                } catch (e) {
+                  console.log('scheduleAlarmAtAsync failed:', e);
+                  showAlert('error');
+                }
+              }}
+            >
+              <Text style={styles.alarmButtonText}>
+                {language === 'sinhala' ? 'තෝරාගත් වේලාවට' : language === 'tamil' ? 'தேர்ந்த நேரத்தில்' : 'At selected'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.alarmRow}>
+            <TouchableOpacity
+              style={[styles.alarmButtonOutline, { borderColor: '#e2e8f0' }]}
+              activeOpacity={0.85}
+              onPress={() => setShowAlarmDatePicker(true)}
+            >
+              <Text style={styles.alarmOutlineText}>📅 {alarmDate.toISOString().slice(0, 10)}</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.alarmButtonOutline, { borderColor: '#e2e8f0' }]}
+              activeOpacity={0.85}
+              onPress={() => setShowAlarmTimePicker(true)}
+            >
+              <Text style={styles.alarmOutlineText}>
+                ⏰ {String(alarmDate.getHours()).padStart(2, '0')}:{String(alarmDate.getMinutes()).padStart(2, '0')}
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {showAlarmDatePicker && (
+            <DateTimePicker value={alarmDate} mode="date" onChange={onAlarmDateChange} display={Platform.OS === 'ios' ? 'inline' : 'default'} />
+          )}
+
+          {showAlarmTimePicker && (
+            <DateTimePicker value={alarmDate} mode="time" onChange={onAlarmTimeChange} display={Platform.OS === 'ios' ? 'spinner' : 'default'} />
+          )}
+
+          <View style={styles.alarmRow}>
+            <TouchableOpacity
+              style={[styles.alarmButtonOutline, { borderColor: '#e2e8f0' }]}
+              activeOpacity={0.85}
+              onPress={refreshScheduled}
+            >
+              <Text style={styles.alarmOutlineText}>
+                {language === 'sinhala' ? 'නියමිත ගණන' : language === 'tamil' ? 'திட்டமிட்டவை' : 'Scheduled'}: {scheduledCount}
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.alarmButton, { backgroundColor: '#dc2626' }]}
+              activeOpacity={0.85}
+              onPress={async () => {
+                try {
+                  await cancelAllAlarmsAsync();
+                  await refreshScheduled();
+                  showAlert('info');
+                } catch (e) {
+                  console.log('cancelAllAlarmsAsync failed:', e);
+                  showAlert('error');
+                }
+              }}
+            >
+              <Text style={styles.alarmButtonText}>
+                {language === 'sinhala' ? 'සියල්ල ඉවත් කරන්න' : language === 'tamil' ? 'அனைத்தையும் நீக்கு' : 'Cancel all'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          <Text style={styles.alarmNote}>
+            {language === 'sinhala'
+              ? 'සටහන: මෙය දැනුම්දීම් මත පදනම් වූ “ඇලර්ම්” UI ඩෙමෝවක්. දුරකථන සැකසුම්/Do Not Disturb අනුව ශබ්ද/වයිබ්රේෂන් වෙනස් විය හැක.'
+              : language === 'tamil'
+                ? 'குறிப்பு: இது அறிவிப்புகள் அடிப்படையிலான அலாரம் UI டெமோ. போன் அமைப்புகள்/Do Not Disturb காரணமாக ஒலி/அதிர்வு மாறலாம்.'
+                : 'Note: This is an alarm-style notification demo. Sound/vibration can vary with device settings / Do Not Disturb.'}
+          </Text>
+        </View>
+
+        <View style={styles.testAlertsSection}>
           <Text style={styles.sectionTitle}>
             {language === 'sinhala' ? 'ඇලර්ට් පරීක්ෂා කිරීම' :
              language === 'tamil' ? 'எச்சரிக்கை சோதனை' :
@@ -152,6 +330,29 @@ const MainApp: React.FC<MainAppProps> = ({ onLogout, onOpenPatientDashboard }) =
               <Text style={styles.testAlertButtonText}>Error</Text>
             </TouchableOpacity>
           </View>
+
+          <TouchableOpacity
+            style={styles.testAlarmAfterAlertsButton}
+            activeOpacity={0.85}
+            onPress={async () => {
+              try {
+                await scheduleAlarmInSecondsAsync({ title: alarmTitle, body: alarmBody, seconds: 10 });
+                showAlert('success');
+                await refreshScheduled();
+              } catch (e) {
+                console.log('Quick alarm test failed:', e);
+                showAlert('error');
+              }
+            }}
+          >
+            <Text style={styles.testAlarmAfterAlertsButtonText}>
+              {language === 'sinhala'
+                ? 'ඇලර්ම් පරීක්ෂා (තත්පර 10කින්)'
+                : language === 'tamil'
+                  ? 'அலாரம் சோதனை (10 விநாடிகளில்)'
+                  : 'Test Alarm (in 10s)'}
+            </Text>
+          </TouchableOpacity>
         </View>
 
         <View style={styles.quickActions}>
@@ -287,6 +488,19 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     fontSize: 14,
   },
+  testAlarmAfterAlertsButton: {
+    marginTop: 14,
+    backgroundColor: '#7c3aed',
+    paddingVertical: 12,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  testAlarmAfterAlertsButtonText: {
+    color: '#ffffff',
+    fontWeight: '900',
+    fontSize: 14,
+  },
   logoutButton: {
     backgroundColor: '#dc2626',
     paddingHorizontal: 14,
@@ -313,6 +527,64 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#e2e8f0',
     backgroundColor: '#f8fafc',
+  },
+  alarmInputs: {
+    marginBottom: 12,
+  },
+  alarmInputLabel: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#334155',
+    marginBottom: 6,
+  },
+  alarmInput: {
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    backgroundColor: '#ffffff',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    height: 44,
+    color: '#0f172a',
+    fontWeight: '700',
+  },
+  alarmRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 12,
+  },
+  alarmButton: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#16a34a',
+  },
+  alarmButtonText: {
+    color: '#ffffff',
+    fontWeight: '900',
+    fontSize: 14,
+  },
+  alarmButtonOutline: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    backgroundColor: '#ffffff',
+  },
+  alarmOutlineText: {
+    color: '#0f172a',
+    fontWeight: '900',
+    fontSize: 13,
+  },
+  alarmNote: {
+    marginTop: 12,
+    color: '#64748b',
+    fontSize: 12,
+    fontWeight: '700',
+    lineHeight: 16,
   },
   dashboardCtaWrap: {
     marginBottom: 16,

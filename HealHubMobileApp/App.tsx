@@ -17,6 +17,9 @@ import EmailVerification from './components/auth/EmailVerification';
 import Patientdashboard from './screens/Patientdashboard';
 import AIWoundorRashDetect from './screens/AIWoundorRashDetect';
 import Notifications from './screens/Notifications';
+import NearbyAmbulance from './screens/NearbyAmbulance';
+import { configureAlarmNotificationsAsync } from './utils/alarms';
+import Constants from 'expo-constants';
 
 // CRITICAL: Prevent auto-hide AND keep native splash visible
 SplashScreen.preventAutoHideAsync()
@@ -36,10 +39,19 @@ export default function AppWrapper() {
 }
 
 function ForceNativeSplashApp() {
-  const [screen, setScreen] = useState<'native-splash' | 'custom-splash' | 'language' | 'intro' | 'login' | 'forgot-password' | 'verification' | 'register' | 'email-verification' | 'patient-dashboard' | 'ai-detect' | 'notifications' | 'main'>('native-splash');
+  const [screen, setScreen] = useState<'native-splash' | 'custom-splash' | 'language' | 'intro' | 'login' | 'forgot-password' | 'verification' | 'register' | 'email-verification' | 'patient-dashboard' | 'ai-detect' | 'notifications' | 'nearby-ambulance' | 'main'>('native-splash');
   const splashTimer = useRef<NodeJS.Timeout | null>(null);
   const [resetEmail, setResetEmail] = useState<string>('');
   const [registerEmail, setRegisterEmail] = useState<string>('');
+
+  useEffect(() => {
+    if (Constants.appOwnership === 'expo') {
+      console.log('Expo Go detected: skipping alarm notifications configuration (use a dev build to test alarms).');
+      return;
+    }
+
+    configureAlarmNotificationsAsync().catch((e) => console.log('Alarm notifications config failed:', e));
+  }, []);
 
   useEffect(() => {
     console.log('=== SPLASH SCREEN FLOW START ===');
@@ -211,6 +223,7 @@ function ForceNativeSplashApp() {
       <Patientdashboard
         onOpenAiDetect={() => setScreen('ai-detect')}
         onOpenNotifications={() => setScreen('notifications')}
+        onOpenNearbyAmbulance={() => setScreen('nearby-ambulance')}
         onLogout={() => setScreen('login')}
       />
     );
@@ -222,6 +235,10 @@ function ForceNativeSplashApp() {
 
   if (screen === 'notifications') {
     return <Notifications onBack={() => setScreen('patient-dashboard')} />;
+  }
+
+  if (screen === 'nearby-ambulance') {
+    return <NearbyAmbulance onBack={() => setScreen('patient-dashboard')} />;
   }
 
   return <MainApp onLogout={() => setScreen('login')} />;
