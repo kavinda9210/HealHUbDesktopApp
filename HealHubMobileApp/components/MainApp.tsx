@@ -13,7 +13,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useLanguage } from '../context/LanguageContext';
 import AlertMessage, { AlertVariant } from './alerts/AlertMessage';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
-import { cancelAllAlarmsAsync, listScheduledAlarmsAsync, scheduleAlarmAtAsync, scheduleAlarmInSecondsAsync } from '../utils/alarms';
+import { cancelAllAlarmsAsync, listScheduledAlarmsAsync, scheduleAlarmAtAsync, scheduleAlarmInSecondsAsync, scheduleCallLikeAlarmBurstAsync } from '../utils/alarms';
 
 type MainAppProps = {
   onLogout?: () => void;
@@ -351,6 +351,35 @@ const MainApp: React.FC<MainAppProps> = ({ onLogout, onOpenPatientDashboard }) =
                 : language === 'tamil'
                   ? 'அலாரம் சோதனை (10 விநாடிகளில்)'
                   : 'Test Alarm (in 10s)'}
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.testAlarmAfterAlertsButton, { backgroundColor: '#0f172a' }]}
+            activeOpacity={0.85}
+            onPress={async () => {
+              try {
+                await scheduleCallLikeAlarmBurstAsync({
+                  title: alarmTitle,
+                  body: alarmBody,
+                  startInSeconds: 10,
+                  repeatEverySeconds: 6,
+                  repeatCount: 10,
+                });
+                showAlert('success');
+                await refreshScheduled();
+              } catch (e) {
+                console.log('Call-like alarm burst test failed:', e);
+                showAlert('error');
+              }
+            }}
+          >
+            <Text style={styles.testAlarmAfterAlertsButtonText}>
+              {language === 'sinhala'
+                ? 'කෝල් වගේ ඇලර්ම් (මිනිත්තු 1ක් වගේ)'
+                : language === 'tamil'
+                  ? 'அழைப்பு போல அலாரம் (~1 நிமிடம்)'
+                  : 'Call-like Alarm (~1 min)'}
             </Text>
           </TouchableOpacity>
         </View>
