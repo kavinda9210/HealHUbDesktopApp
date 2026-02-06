@@ -1,38 +1,54 @@
 import React, { useMemo, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, StatusBar, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, StatusBar, ActivityIndicator, Linking, Platform } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Location from 'expo-location';
 
 import { useLanguage } from '../context/LanguageContext';
 import { useTheme } from '../context/ThemeContext';
+import { apiPost } from '../utils/api';
 
 type NearbyAmbulanceProps = {
+  accessToken?: string;
   onBack?: () => void;
 };
 
 type Ambulance = {
-  id: string;
-  name: string;
-  distanceKm: number;
-  etaMin: number;
-  phone: string;
-  status: 'available' | 'busy';
+  ambulance_id: number;
+  ambulance_number: string;
+  driver_name: string;
+  driver_phone: string;
+  distance_km?: number;
+  estimated_arrival?: number;
+  is_available?: boolean;
+  current_latitude?: number | null;
+  current_longitude?: number | null;
 };
 
-function clamp(n: number, min: number, max: number) {
-  return Math.max(min, Math.min(max, n));
+async function openDirections(lat: number, lng: number) {
+  const dest = `${lat},${lng}`;
+  const urls: string[] = Platform.OS === 'android'
+    ? [
+        `google.navigation:q=${encodeURIComponent(dest)}`,
+        `geo:${dest}?q=${encodeURIComponent(dest)}`,
+        `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(dest)}`,
+      ]
+    : [
+        `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(dest)}`,
+      ];
+
+  for (const url of urls) {
+    try {
+      await Linking.openURL(url);
+      return;
+    } catch {
+      // try next
+    }
+  }
+
+  throw new Error('Cannot open Maps');
 }
 
-function buildAmbulances(): Ambulance[] {
-  // UI demo list (replace with real API + GPS later)
-  return [
-    { id: 'a1', name: 'HealHub Ambulance 01', distanceKm: 1.2, etaMin: 6, phone: '+94 11 200 0001', status: 'available' },
-    { id: 'a2', name: 'City Emergency Unit', distanceKm: 2.8, etaMin: 11, phone: '+94 11 200 0002', status: 'available' },
-    { id: 'a3', name: 'Community Ambulance', distanceKm: 4.6, etaMin: 18, phone: '+94 11 200 0003', status: 'busy' },
-  ];
-}
-
-export default function NearbyAmbulance({ onBack }: NearbyAmbulanceProps) {
+export default function NearbyAmbulance({ accessToken, onBack }: NearbyAmbulanceProps) {
   const { language } = useLanguage();
   const { colors, mode } = useTheme();
   const insets = useSafeAreaInsets();
@@ -40,6 +56,10 @@ export default function NearbyAmbulance({ onBack }: NearbyAmbulanceProps) {
   const [permission, setPermission] = useState<Location.PermissionStatus | 'unknown'>('unknown');
   const [coords, setCoords] = useState<Location.LocationObjectCoords | null>(null);
   const [loading, setLoading] = useState(false);
+  const [ambulances, setAmbulances] = useState<Ambulance[]>([]);
+  const [errorMessage, setErrorMessage] = useState('');
+  const [requestingId, setRequestingId] = useState<number | null>(null);
+  const [successMessage, setSuccessMessage] = useState('');
 
   const title = useMemo(() => {
     if (language === 'sinhala') return 'ආසන්න ඇම්බියුලන්ස්';
@@ -48,9 +68,9 @@ export default function NearbyAmbulance({ onBack }: NearbyAmbulanceProps) {
   }, [language]);
 
   const subtitle = useMemo(() => {
-    if (language === 'sinhala') return 'ඔබගේ ස්ථානය සක්‍රීය කළால் ආසන්න ඇම්බියුලන්ස් පෙන්වයි (UI ඩෙමෝ).';
-    if (language === 'tamil') return 'உங்கள் இடத்தை இயக்கினால் அருகிலுள்ள ஆம்புலன்ஸ்களை காட்டும் (UI டெமோ).';
-    return 'Turn on location to show nearby ambulances (UI demo).';
+    if (language === 'sinhala') return 'ඔබගේ ස්ථානය සක්‍රීය කළ පසු ආසන්න ඇම්බියුලන්ස් පෙන්වයි.';
+    if (language === 'tamil') return 'உங்கள் இடத்தை இயக்கினால் அருகிலுள்ள ஆம்புலன்ஸ்களை காட்டும்.';
+    return 'Turn on location to show nearby ambulances.';
   }, [language]);
 
   const enableLocationLabel = useMemo(() => {
@@ -65,8 +85,46 @@ export default function NearbyAmbulance({ onBack }: NearbyAmbulanceProps) {
     return 'Refresh';
   }, [language]);
 
+  const requestLabel = useMemo(() => {
+    if (language === 'sinhala') return 'ඉල්ලන්න';
+    if (language === 'tamil') return 'கோரு';
+    return 'Request';
+  }, [language]);
+
+  const directionsLabel = useMemo(() => {
+    if (language === 'sinhala') return 'දිශානතිය';
+    if (language === 'tamil') return 'வழிநடத்து';
+    return 'Directions';
+  }, [language]);
+
+  const fetchNearby = async (latitude: number, longitude: number) => {
+    if (!accessToken) {
+      setErrorMessage('Please log in to request an ambulance');
+      return;
+    }
+
+    setErrorMessage('');
+    setSuccessMessage('');
+
+    const res = await apiPost<any>(
+      '/api/patient/ambulances/nearby',
+      { latitude, longitude, radius_km: 15, limit: 20 },
+      accessToken
+    );
+
+    if (!res.ok || res.data?.success === false) {
+      const msg = (res.data && (res.data.message || res.data.error)) || 'Failed to fetch nearby ambulances';
+      setErrorMessage(String(msg));
+      setAmbulances([]);
+      return;
+    }
+
+    setAmbulances(Array.isArray(res.data?.data) ? res.data.data : []);
+  };
+
   const requestPermissionAndLocation = async () => {
     setLoading(true);
+    setErrorMessage('');
     try {
       const perm = await Location.requestForegroundPermissionsAsync();
       setPermission(perm.status);
@@ -77,23 +135,37 @@ export default function NearbyAmbulance({ onBack }: NearbyAmbulanceProps) {
 
       const current = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
       setCoords(current.coords);
+      await fetchNearby(current.coords.latitude, current.coords.longitude);
     } finally {
       setLoading(false);
     }
   };
 
-  const ambulances = useMemo(() => {
-    const base = buildAmbulances();
-    if (!coords) return base;
+  const requestSpecificAmbulance = async (ambulanceId: number) => {
+    if (!accessToken || !coords) return;
 
-    // Minor UI demo tweak based on coordinates to feel “dynamic”
-    const nudge = clamp(((coords.latitude + coords.longitude) % 1) * 0.6, 0, 0.6);
-    return base.map((a, idx) => ({
-      ...a,
-      distanceKm: Math.max(0.4, Number((a.distanceKm + (idx % 2 === 0 ? nudge : -nudge)).toFixed(1))),
-      etaMin: Math.max(3, Math.round(a.etaMin + (idx % 2 === 0 ? nudge * 6 : -nudge * 6))),
-    }));
-  }, [coords]);
+    setRequestingId(ambulanceId);
+    setErrorMessage('');
+    setSuccessMessage('');
+    try {
+      const res = await apiPost<any>(
+        `/api/patient/ambulances/${ambulanceId}/request`,
+        { latitude: coords.latitude, longitude: coords.longitude },
+        accessToken
+      );
+
+      if (!res.ok || res.data?.success === false) {
+        const msg = (res.data && (res.data.message || res.data.error)) || 'Failed to send request';
+        setErrorMessage(String(msg));
+        return;
+      }
+
+      setSuccessMessage(String(res.data?.message || 'Ambulance request sent'));
+      await fetchNearby(coords.latitude, coords.longitude);
+    } finally {
+      setRequestingId(null);
+    }
+  };
 
   const emergencySurface = mode === 'dark' ? '#2b1d1f' : '#fee2e2';
 
@@ -159,6 +231,9 @@ export default function NearbyAmbulance({ onBack }: NearbyAmbulanceProps) {
           <Text style={[styles.gpsText, { color: colors.subtext }]}>Latitude: {coords ? coords.latitude.toFixed(5) : '-'}</Text>
           <Text style={[styles.gpsText, { color: colors.subtext }]}>Longitude: {coords ? coords.longitude.toFixed(5) : '-'}</Text>
 
+          {!!errorMessage && <Text style={[styles.note, { color: colors.danger }]}>{errorMessage}</Text>}
+          {!!successMessage && <Text style={[styles.note, { color: colors.primary }]}>{successMessage}</Text>}
+
           {permission === Location.PermissionStatus.DENIED && (
             <Text style={[styles.note, { color: colors.subtext }]}>
               {language === 'sinhala'
@@ -174,38 +249,57 @@ export default function NearbyAmbulance({ onBack }: NearbyAmbulanceProps) {
           <Text style={[styles.sectionTitle, { color: colors.text }]}>Ambulances</Text>
 
           {ambulances.map((a) => {
-            const busy = a.status === 'busy';
+            const busy = a.is_available === false;
+            const lat = typeof a.current_latitude === 'number' ? a.current_latitude : null;
+            const lng = typeof a.current_longitude === 'number' ? a.current_longitude : null;
             return (
-              <View key={a.id} style={[styles.itemRow, { borderTopColor: colors.border }]}>
+              <View key={String(a.ambulance_id)} style={[styles.itemRow, { borderTopColor: colors.border }]}>
                 <View style={{ flex: 1 }}>
-                  <Text style={[styles.itemTitle, { color: colors.text }]}>{a.name}</Text>
+                  <Text style={[styles.itemTitle, { color: colors.text }]}>{a.ambulance_number}</Text>
                   <Text style={[styles.itemSub, { color: colors.subtext }]}>
-                    {a.distanceKm.toFixed(1)} km • {a.etaMin} min • {busy ? (language === 'sinhala' ? 'කාර්යබහුලයි' : language === 'tamil' ? 'பணியில்' : 'Busy') : (language === 'sinhala' ? 'ලබා ගත හැක' : language === 'tamil' ? 'கிடைக்கும்' : 'Available')}
+                    {typeof a.distance_km === 'number' ? `${a.distance_km.toFixed(1)} km` : '-'} • {typeof a.estimated_arrival === 'number' ? `${Math.round(a.estimated_arrival)} min` : '-'} • {busy ? (language === 'sinhala' ? 'කාර්යබහුලයි' : language === 'tamil' ? 'பணியில்' : 'Busy') : (language === 'sinhala' ? 'ලබා ගත හැක' : language === 'tamil' ? 'கிடைக்கும்' : 'Available')}
                   </Text>
+                  <Text style={[styles.itemSub, { color: colors.subtext }]}>Driver: {a.driver_name} • {a.driver_phone}</Text>
                 </View>
 
-                <TouchableOpacity
-                  activeOpacity={0.85}
-                  style={[styles.callBtn, { backgroundColor: busy ? colors.border : colors.primary }]}
-                  onPress={() => {
-                    // UI only
-                    console.log('Call ambulance (UI only):', a.phone);
-                  }}
-                >
-                  <Text style={[styles.callBtnText, { color: '#ffffff' }]}>
-                    {language === 'sinhala' ? 'කෝල්' : language === 'tamil' ? 'அழை' : 'Call'}
-                  </Text>
-                </TouchableOpacity>
+                <View style={{ gap: 8, alignItems: 'flex-end' }}>
+                  {lat != null && lng != null && (
+                    <TouchableOpacity
+                      activeOpacity={0.85}
+                      style={[styles.callBtn, { backgroundColor: colors.border }]}
+                      onPress={async () => {
+                        try {
+                          await openDirections(lat, lng);
+                        } catch {
+                          setErrorMessage('Cannot open Maps');
+                        }
+                      }}
+                    >
+                      <Text style={[styles.callBtnText, { color: colors.text }]}>{directionsLabel}</Text>
+                    </TouchableOpacity>
+                  )}
+
+                  <TouchableOpacity
+                    activeOpacity={0.85}
+                    disabled={busy || requestingId === a.ambulance_id || !coords}
+                    style={[styles.callBtn, { backgroundColor: busy ? colors.border : colors.primary }]}
+                    onPress={() => requestSpecificAmbulance(a.ambulance_id)}
+                  >
+                    <Text style={[styles.callBtnText, { color: '#ffffff' }]}>
+                      {requestingId === a.ambulance_id ? '...' : requestLabel}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
               </View>
             );
           })}
 
           <Text style={[styles.note, { color: colors.subtext }]}>
             {language === 'sinhala'
-              ? 'සටහන: මෙය UI පමණි. පසුව සැබෑ සේවා/API, රියදුරු GPS, සහ මාර්ගගත කිරීම එක් කළ හැක.'
+              ? 'සටහන: ඉල්ලීම යවන විට ඔබගේ GPS ස්ථානය ඇතුළත් වේ.'
               : language === 'tamil'
-                ? 'குறிப்பு: இது UI மட்டும். பின்னர் உண்மை சேவை/API, ஓட்டுநர் GPS, வழித்தடம் சேர்க்கலாம்.'
-                : 'Note: UI only. Later we can connect real services/API, driver GPS, and routing.'}
+                ? 'குறிப்பு: கோரிக்கை அனுப்பும்போது உங்கள் GPS இடம் சேர்க்கப்படும்.'
+                : 'Note: Your GPS location is included with the request.'}
           </Text>
         </View>
       </ScrollView>

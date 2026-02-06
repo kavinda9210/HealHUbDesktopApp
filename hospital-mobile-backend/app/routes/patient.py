@@ -805,7 +805,11 @@ def request_ambulance(ambulance_id: int):
             'insert',
             user_id=ambulance['user_id'],
             title='Ambulance Request',
-            message=f'Patient {patient["full_name"]} ({patient["phone"]}) has requested ambulance at your location',
+            message=(
+                f"Patient {patient['full_name']} ({patient['phone']}) requested an ambulance. "
+                f"Location: {data['latitude']}, {data['longitude']}. "
+                f"Directions: https://www.google.com/maps/dir/?api=1&destination={data['latitude']},{data['longitude']}"
+            ),
             type='Ambulance',
             created_at=sl_now_iso()
         )

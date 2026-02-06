@@ -18,6 +18,7 @@ import Patientdashboard from './screens/Patientdashboard';
 import AIWoundorRashDetect from './screens/AIWoundorRashDetect';
 import Notifications from './screens/Notifications';
 import NearbyAmbulance from './screens/NearbyAmbulance';
+import AmbulanceStaffDashboard from './screens/AmbulanceStaffDashboard';
 import { configureAlarmNotificationsAsync } from './utils/alarms';
 import Constants from 'expo-constants';
 
@@ -39,7 +40,7 @@ export default function AppWrapper() {
 }
 
 function ForceNativeSplashApp() {
-  const [screen, setScreen] = useState<'native-splash' | 'custom-splash' | 'language' | 'intro' | 'login' | 'forgot-password' | 'verification' | 'register' | 'email-verification' | 'patient-dashboard' | 'ai-detect' | 'notifications' | 'nearby-ambulance' | 'main'>('native-splash');
+  const [screen, setScreen] = useState<'native-splash' | 'custom-splash' | 'language' | 'intro' | 'login' | 'forgot-password' | 'verification' | 'register' | 'email-verification' | 'patient-dashboard' | 'ai-detect' | 'notifications' | 'nearby-ambulance' | 'ambulance-dashboard' | 'main'>('native-splash');
   const splashTimer = useRef<NodeJS.Timeout | null>(null);
   const [resetEmail, setResetEmail] = useState<string>('');
   const [registerEmail, setRegisterEmail] = useState<string>('');
@@ -94,8 +95,12 @@ function ForceNativeSplashApp() {
     setScreen('intro');
   };
 
-  const handleLogin = () => {
-    console.log('Login success, entering patient dashboard');
+  const goPostAuth = (user: any) => {
+    const role = String(user?.role ?? '').toLowerCase();
+    if (role === 'ambulance_staff') {
+      setScreen('ambulance-dashboard');
+      return;
+    }
     setScreen('patient-dashboard');
   };
 
@@ -142,11 +147,10 @@ function ForceNativeSplashApp() {
   if (screen === 'login') {
     return (
       <Login
-        onLogin={handleLogin}
-        onLoginSuccess={({ accessToken, refreshToken }) => {
+        onLoginSuccess={({ accessToken, refreshToken, user }) => {
           setAccessToken(accessToken);
           setRefreshToken(refreshToken);
-          setScreen('patient-dashboard');
+          goPostAuth(user);
         }}
         onForgotPassword={handleForgotPassword}
         onRegister={handleRegister}
@@ -201,11 +205,11 @@ function ForceNativeSplashApp() {
     return (
       <EmailVerification
         email={registerEmail}
-        onVerified={({ accessToken, refreshToken }) => {
+        onVerified={({ accessToken, refreshToken, user }) => {
           console.log('Email verified successfully');
           setAccessToken(accessToken);
           setRefreshToken(refreshToken);
-          setScreen('patient-dashboard');
+          goPostAuth(user);
         }}
         onBack={() => setScreen('register')}
       />
@@ -251,7 +255,21 @@ function ForceNativeSplashApp() {
   }
 
   if (screen === 'nearby-ambulance') {
-    return <NearbyAmbulance onBack={() => setScreen('patient-dashboard')} />;
+    return <NearbyAmbulance accessToken={accessToken} onBack={() => setScreen('patient-dashboard')} />;
+  }
+
+  if (screen === 'ambulance-dashboard') {
+    return (
+      <AmbulanceStaffDashboard
+        accessToken={accessToken}
+        onBack={() => setScreen('login')}
+        onLogout={() => {
+          setAccessToken('');
+          setRefreshToken('');
+          setScreen('login');
+        }}
+      />
+    );
   }
 
   return <MainApp onLogout={() => setScreen('login')} />;
