@@ -35,6 +35,10 @@ class Config:
     # App URLs
     FRONTEND_URL = os.environ.get('FRONTEND_URL', 'http://localhost:3000')
     BACKEND_URL = os.environ.get('BACKEND_URL', 'http://localhost:5000')
+
+    MODEL_PATH = os.environ.get('MODEL_PATH', 'app/models_storage/Skin_disease_model.h5')
+    ALLOWED_IMAGE_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'bmp'}
+    MAX_IMAGE_SIZE_MB = 10
     
     # Security
     PASSWORD_RESET_TIMEOUT = 900  # 15 minutes in seconds

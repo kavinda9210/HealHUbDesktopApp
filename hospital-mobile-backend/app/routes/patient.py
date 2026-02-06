@@ -892,3 +892,10 @@ def get_patient_history():
             'message': 'Failed to get history',
             'error': str(e)
         }), 500
+@patient_bp.route('/skin-analysis', methods=['POST'])
+@jwt_required()
+def skin_analysis():
+    """Endpoint for skin disease analysis (alias to skin-disease/predict)"""
+    # This redirects to the skin disease prediction endpoint
+    # You can keep this for backward compatibility or remove it
+    pass

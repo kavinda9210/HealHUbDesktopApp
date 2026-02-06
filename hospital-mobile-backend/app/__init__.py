@@ -4,6 +4,8 @@ from flask_jwt_extended import JWTManager
 import logging
 from .config import config
 from app.utils.time_utils import sl_now_iso
+from .routes.skin_disease import skin_disease_bp
+
 
 # Configure logging
 logging.basicConfig(
@@ -42,6 +44,8 @@ def create_app(config_name='default'):
     from .routes.appointment import appointment_bp
     from .routes.medication import medication_bp
     from .routes.payment import payment_bp
+    from .routes.skin_disease import skin_disease_bp
+
     
     app.register_blueprint(auth_bp, url_prefix='/api/auth')
     app.register_blueprint(patient_bp, url_prefix='/api/patient')
@@ -49,6 +53,8 @@ def create_app(config_name='default'):
     app.register_blueprint(appointment_bp, url_prefix='/api/appointment')
     app.register_blueprint(medication_bp, url_prefix='/api/medication')
     app.register_blueprint(payment_bp, url_prefix='/api/payment')
+    app.register_blueprint(skin_disease_bp, url_prefix='/api/skin-disease')
+
     
     # JWT configuration
     @jwt.expired_token_loader
