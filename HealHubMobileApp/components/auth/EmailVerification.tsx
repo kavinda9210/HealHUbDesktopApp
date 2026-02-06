@@ -10,18 +10,21 @@ import {
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLanguage } from '../../context/LanguageContext';
+import { apiPost } from '../../utils/api';
 
 export type EmailVerificationProps = {
   email?: string;
-  onVerify?: (params: { email?: string; code: string }) => void;
+  onVerified?: () => void;
   onBack?: () => void;
 };
 
-export default function EmailVerification({ email, onVerify, onBack }: EmailVerificationProps) {
+export default function EmailVerification({ email, onVerified, onBack }: EmailVerificationProps) {
   const { language } = useLanguage();
   const insets = useSafeAreaInsets();
 
   const [code, setCode] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string>('');
 
   const title = useMemo(() => {
     if (language === 'sinhala') return 'ඊමේල් සත්‍යාපනය';
@@ -53,6 +56,49 @@ export default function EmailVerification({ email, onVerify, onBack }: EmailVeri
     return 'Back';
   }, [language]);
 
+  async function verify() {
+    const trimmedEmail = (email ?? '').trim();
+    const trimmedCode = code.trim();
+
+    if (!trimmedEmail) {
+      setErrorMessage('Email is missing');
+      return;
+    }
+    if (!trimmedCode) {
+      setErrorMessage('Verification code is required');
+      return;
+    }
+
+    setIsSubmitting(true);
+    setErrorMessage('');
+
+    try {
+      const result = await apiPost<any>('/api/auth/verify-email', {
+        email: trimmedEmail,
+        verification_code: trimmedCode,
+      });
+
+      if (!result.ok) {
+        const msg =
+          (result.data && (result.data.message || result.data.error)) ||
+          (result.status === 400 ? 'Invalid or expired code' : 'Verification failed');
+        setErrorMessage(String(msg));
+        return;
+      }
+
+      if (result.data && result.data.success === false) {
+        setErrorMessage(String(result.data.message || 'Verification failed'));
+        return;
+      }
+
+      onVerified?.();
+    } catch (e: any) {
+      setErrorMessage(e?.message ? String(e.message) : 'Verification failed');
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
       <KeyboardAvoidingView
@@ -79,10 +125,21 @@ export default function EmailVerification({ email, onVerify, onBack }: EmailVeri
             <TouchableOpacity
               style={styles.button}
               activeOpacity={0.85}
-              onPress={() => onVerify?.({ email, code: code.trim() })}
+              disabled={isSubmitting}
+              onPress={verify}
             >
-              <Text style={styles.buttonText}>{buttonLabel}</Text>
+              <Text style={styles.buttonText}>
+                {isSubmitting
+                  ? language === 'sinhala'
+                    ? 'සකසමින්...'
+                    : language === 'tamil'
+                      ? 'செயலாக்கப்படுகிறது...'
+                      : 'Verifying...'
+                  : buttonLabel}
+              </Text>
             </TouchableOpacity>
+
+            {!!errorMessage && <Text style={styles.errorText}>{errorMessage}</Text>}
 
             {!!onBack && (
               <TouchableOpacity
@@ -95,13 +152,6 @@ export default function EmailVerification({ email, onVerify, onBack }: EmailVeri
               </TouchableOpacity>
             )}
 
-            <Text style={styles.footerNote}>
-              {language === 'sinhala'
-                ? 'මෙය UI පමණි (සත්‍ය ඊමේල් සත්‍යාපනය පසුව එකතු කරමු).'
-                : language === 'tamil'
-                  ? 'இது UI மட்டும் (உண்மையான மின்னஞ்சல் சரிபார்ப்பை பின்னர் சேர்க்கலாம்).'
-                  : 'UI only (we can add real email verification later).'}
-            </Text>
           </View>
         </View>
       </KeyboardAvoidingView>
@@ -185,10 +235,11 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     fontSize: 14,
   },
-  footerNote: {
+  errorText: {
     marginTop: 12,
-    fontSize: 12,
-    color: '#64748b',
+    color: '#b91c1c',
+    fontWeight: '700',
+    fontSize: 13,
     textAlign: 'center',
   },
 });

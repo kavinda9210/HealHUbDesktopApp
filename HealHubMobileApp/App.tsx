@@ -179,13 +179,8 @@ function ForceNativeSplashApp() {
   if (screen === 'register') {
     return (
       <Register
-        onRegister={({ name, email, password, confirmPassword }) => {
-          console.log('Register pressed (UI only):', {
-            name,
-            email,
-            passwordLen: password.length,
-            confirmPasswordLen: confirmPassword.length,
-          });
+        onRegistered={(email) => {
+          console.log('Register succeeded. Email:', email);
           setRegisterEmail(email);
           setScreen('email-verification');
         }}
@@ -199,8 +194,8 @@ function ForceNativeSplashApp() {
     return (
       <EmailVerification
         email={registerEmail}
-        onVerify={({ email, code }) => {
-          console.log('Email verification pressed (UI only):', { email, code });
+        onVerified={() => {
+          console.log('Email verified successfully');
           setScreen('main');
         }}
         onBack={() => setScreen('register')}
