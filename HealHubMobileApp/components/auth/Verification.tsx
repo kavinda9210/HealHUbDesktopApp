@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLanguage } from '../../context/LanguageContext';
+import { apiPost } from '../../utils/api';
 
 export type VerificationProps = {
   email?: string;
@@ -29,6 +30,8 @@ export default function Verification({ email, onVerify, onBack }: VerificationPr
   const [code, setCode] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string>('');
 
   const title = useMemo(() => {
     if (language === 'sinhala') return 'සත්‍යාපනය';
@@ -71,6 +74,62 @@ export default function Verification({ email, onVerify, onBack }: VerificationPr
     if (language === 'tamil') return 'பின்செல்';
     return 'Back';
   }, [language]);
+
+  function passwordLooksValid(value: string) {
+    return value.length >= 8 && /[A-Z]/.test(value) && /[a-z]/.test(value) && /\d/.test(value);
+  }
+
+  async function submit() {
+    const trimmedEmail = (email ?? '').trim();
+    const trimmedCode = code.trim();
+
+    if (!trimmedEmail) {
+      setErrorMessage('Email is missing');
+      return;
+    }
+    if (!trimmedCode) {
+      setErrorMessage('Verification code is required');
+      return;
+    }
+    if (!passwordLooksValid(password)) {
+      setErrorMessage('Password must be 8+ chars with uppercase, lowercase, and a digit');
+      return;
+    }
+    if (password !== confirmPassword) {
+      setErrorMessage('Passwords do not match');
+      return;
+    }
+
+    setIsSubmitting(true);
+    setErrorMessage('');
+    try {
+      const result = await apiPost<any>('/api/auth/reset-password', {
+        email: trimmedEmail,
+        verification_code: trimmedCode,
+        new_password: password,
+        confirm_password: confirmPassword,
+      });
+
+      if (!result.ok) {
+        const msg =
+          (result.data && (result.data.message || result.data.error)) ||
+          (result.status === 400 ? 'Invalid or expired code' : 'Password reset failed');
+        setErrorMessage(String(msg));
+        return;
+      }
+
+      if (result.data && result.data.success === false) {
+        setErrorMessage(String(result.data.message || 'Password reset failed'));
+        return;
+      }
+
+      onVerify?.({ email: trimmedEmail, code: trimmedCode, password, confirmPassword });
+    } catch (e: any) {
+      setErrorMessage(e?.message ? String(e.message) : 'Password reset failed');
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
@@ -126,10 +185,21 @@ export default function Verification({ email, onVerify, onBack }: VerificationPr
             <TouchableOpacity
               style={styles.button}
               activeOpacity={0.85}
-              onPress={() => onVerify?.({ email, code: code.trim(), password, confirmPassword })}
+              disabled={isSubmitting}
+              onPress={submit}
             >
-              <Text style={styles.buttonText}>{buttonLabel}</Text>
+              <Text style={styles.buttonText}>
+                {isSubmitting
+                  ? language === 'sinhala'
+                    ? 'සකසමින්...'
+                    : language === 'tamil'
+                      ? 'செயலாக்கப்படுகிறது...'
+                      : 'Updating...'
+                  : buttonLabel}
+              </Text>
             </TouchableOpacity>
+
+            {!!errorMessage && <Text style={styles.errorText}>{errorMessage}</Text>}
 
             {!!onBack && (
               <TouchableOpacity
@@ -142,13 +212,6 @@ export default function Verification({ email, onVerify, onBack }: VerificationPr
               </TouchableOpacity>
             )}
 
-            <Text style={styles.footerNote}>
-              {language === 'sinhala'
-                ? 'මෙය UI පමණි (සත්‍ය සත්‍යාපනය/මුරපද යාවත්කාලීන කිරීම පසුව එකතු කරමු).'
-                : language === 'tamil'
-                  ? 'இது UI மட்டும் (உண்மையான சரிபார்ப்பு/கடவுச்சொல் புதுப்பிப்பை பின்னர் சேர்க்கலாம்).'
-                  : 'UI only (we can add real verification later).'}
-            </Text>
           </View>
         </View>
       </KeyboardAvoidingView>
@@ -232,10 +295,11 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     fontSize: 14,
   },
-  footerNote: {
+  errorText: {
     marginTop: 12,
-    fontSize: 12,
-    color: '#64748b',
+    color: '#b91c1c',
+    fontWeight: '700',
+    fontSize: 13,
     textAlign: 'center',
   },
 });

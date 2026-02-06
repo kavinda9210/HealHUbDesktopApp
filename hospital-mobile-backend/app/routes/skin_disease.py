@@ -5,6 +5,7 @@ from flask import Blueprint, request, jsonify, current_app
 from flask_jwt_extended import jwt_required, get_jwt_identity
 import io
 from PIL import Image
+import base64
 
 from app.services.skin_disease_predictor import (
     get_predictor, initialize_predictor
@@ -21,34 +22,58 @@ def predict_skin_disease():
     """Predict skin disease from uploaded image"""
     try:
         current_user_id = get_jwt_identity()
-        
-        # Check if image is uploaded
-        if 'image' not in request.files:
+
+        image_bytes: bytes | None = None
+        image_filename: str = 'image.jpg'
+
+        # Accept either multipart form upload or JSON base64 payload.
+        if 'image' in request.files:
+            image_file = request.files['image']
+
+            if image_file.filename == '':
+                return jsonify({
+                    'success': False,
+                    'message': 'No file selected'
+                }), 400
+
+            allowed_extensions = current_app.config.get('ALLOWED_IMAGE_EXTENSIONS', {'png', 'jpg', 'jpeg'})
+            if '.' not in image_file.filename or \
+               image_file.filename.rsplit('.', 1)[1].lower() not in allowed_extensions:
+                return jsonify({
+                    'success': False,
+                    'message': f'Allowed file types: {", ".join(allowed_extensions)}'
+                }), 400
+
+            image_filename = image_file.filename
+            image_bytes = image_file.read()
+        else:
+            data = request.get_json(silent=True) or {}
+            b64 = data.get('image_base64')
+            image_filename = data.get('filename') or image_filename
+
+            if not b64:
+                return jsonify({
+                    'success': False,
+                    'message': 'No image provided (expected multipart field "image" or JSON field "image_base64")'
+                }), 400
+
+            # Support both raw base64 and data URLs.
+            if isinstance(b64, str) and b64.startswith('data:') and ',' in b64:
+                b64 = b64.split(',', 1)[1]
+
+            try:
+                image_bytes = base64.b64decode(b64, validate=True)
+            except Exception:
+                return jsonify({
+                    'success': False,
+                    'message': 'Invalid base64 image data'
+                }), 400
+
+        if not image_bytes:
             return jsonify({
                 'success': False,
-                'message': 'No image file provided'
+                'message': 'No image data provided'
             }), 400
-        
-        image_file = request.files['image']
-        
-        # Check if file is selected
-        if image_file.filename == '':
-            return jsonify({
-                'success': False,
-                'message': 'No file selected'
-            }), 400
-        
-        # Check file extension
-        allowed_extensions = current_app.config.get('ALLOWED_IMAGE_EXTENSIONS', {'png', 'jpg', 'jpeg'})
-        if '.' not in image_file.filename or \
-           image_file.filename.rsplit('.', 1)[1].lower() not in allowed_extensions:
-            return jsonify({
-                'success': False,
-                'message': f'Allowed file types: {", ".join(allowed_extensions)}'
-            }), 400
-        
-        # Read image file
-        image_bytes = image_file.read()
         
         # Initialize predictor if not already
         model_path = current_app.config.get('MODEL_PATH', 'instance/models/Skin_disease_model.h5')

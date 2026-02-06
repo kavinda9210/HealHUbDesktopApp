@@ -43,6 +43,8 @@ function ForceNativeSplashApp() {
   const splashTimer = useRef<NodeJS.Timeout | null>(null);
   const [resetEmail, setResetEmail] = useState<string>('');
   const [registerEmail, setRegisterEmail] = useState<string>('');
+  const [accessToken, setAccessToken] = useState<string>('');
+  const [refreshToken, setRefreshToken] = useState<string>('');
 
   useEffect(() => {
     if (Constants.appOwnership === 'expo') {
@@ -93,8 +95,8 @@ function ForceNativeSplashApp() {
   };
 
   const handleLogin = () => {
-    console.log('Login pressed (UI only), entering main app');
-    setScreen('main');
+    console.log('Login success, entering patient dashboard');
+    setScreen('patient-dashboard');
   };
 
   const handleForgotPassword = () => {
@@ -141,6 +143,11 @@ function ForceNativeSplashApp() {
     return (
       <Login
         onLogin={handleLogin}
+        onLoginSuccess={({ accessToken, refreshToken }) => {
+          setAccessToken(accessToken);
+          setRefreshToken(refreshToken);
+          setScreen('patient-dashboard');
+        }}
         onForgotPassword={handleForgotPassword}
         onRegister={handleRegister}
       />
@@ -194,9 +201,11 @@ function ForceNativeSplashApp() {
     return (
       <EmailVerification
         email={registerEmail}
-        onVerified={() => {
+        onVerified={({ accessToken, refreshToken }) => {
           console.log('Email verified successfully');
-          setScreen('main');
+          setAccessToken(accessToken);
+          setRefreshToken(refreshToken);
+          setScreen('patient-dashboard');
         }}
         onBack={() => setScreen('register')}
       />
@@ -207,7 +216,11 @@ function ForceNativeSplashApp() {
   if (screen === 'main') {
     return (
       <MainApp
-        onLogout={() => setScreen('login')}
+        onLogout={() => {
+          setAccessToken('');
+          setRefreshToken('');
+          setScreen('login');
+        }}
         onOpenPatientDashboard={() => setScreen('patient-dashboard')}
       />
     );
@@ -216,16 +229,21 @@ function ForceNativeSplashApp() {
   if (screen === 'patient-dashboard') {
     return (
       <Patientdashboard
+        accessToken={accessToken}
         onOpenAiDetect={() => setScreen('ai-detect')}
         onOpenNotifications={() => setScreen('notifications')}
         onOpenNearbyAmbulance={() => setScreen('nearby-ambulance')}
-        onLogout={() => setScreen('login')}
+        onLogout={() => {
+          setAccessToken('');
+          setRefreshToken('');
+          setScreen('login');
+        }}
       />
     );
   }
 
   if (screen === 'ai-detect') {
-    return <AIWoundorRashDetect onBack={() => setScreen('patient-dashboard')} />;
+    return <AIWoundorRashDetect accessToken={accessToken} onBack={() => setScreen('patient-dashboard')} />;
   }
 
   if (screen === 'notifications') {

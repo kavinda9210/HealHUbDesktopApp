@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLanguage } from '../../context/LanguageContext';
+import { apiPost } from '../../utils/api';
 
 export type ForgotPasswordProps = {
   onSendVerification?: (email: string) => void;
@@ -21,6 +22,8 @@ export default function ForgotPassword({ onSendVerification, onBack }: ForgotPas
   const insets = useSafeAreaInsets();
 
   const [email, setEmail] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string>('');
 
   const title = useMemo(() => {
     if (language === 'sinhala') return 'මුරපදය අමතකද?';
@@ -45,6 +48,39 @@ export default function ForgotPassword({ onSendVerification, onBack }: ForgotPas
     if (language === 'tamil') return 'பின்செல்';
     return 'Back';
   }, [language]);
+
+  async function submit() {
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail) {
+      setErrorMessage('Email is required');
+      return;
+    }
+
+    setIsSubmitting(true);
+    setErrorMessage('');
+    try {
+      const result = await apiPost<any>('/api/auth/forgot-password', {
+        email: trimmedEmail,
+      });
+
+      if (!result.ok) {
+        const msg = (result.data && (result.data.message || result.data.error)) || 'Failed to request reset code';
+        setErrorMessage(String(msg));
+        return;
+      }
+
+      if (result.data && result.data.success === false) {
+        setErrorMessage(String(result.data.message || 'Failed to request reset code'));
+        return;
+      }
+
+      onSendVerification?.(trimmedEmail);
+    } catch (e: any) {
+      setErrorMessage(e?.message ? String(e.message) : 'Failed to request reset code');
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
@@ -73,10 +109,21 @@ export default function ForgotPassword({ onSendVerification, onBack }: ForgotPas
             <TouchableOpacity
               style={styles.button}
               activeOpacity={0.85}
-              onPress={() => onSendVerification?.(email.trim())}
+              disabled={isSubmitting}
+              onPress={submit}
             >
-              <Text style={styles.buttonText}>{buttonLabel}</Text>
+              <Text style={styles.buttonText}>
+                {isSubmitting
+                  ? language === 'sinhala'
+                    ? 'සකසමින්...'
+                    : language === 'tamil'
+                      ? 'செயலாக்கப்படுகிறது...'
+                      : 'Sending...'
+                  : buttonLabel}
+              </Text>
             </TouchableOpacity>
+
+            {!!errorMessage && <Text style={styles.errorText}>{errorMessage}</Text>}
 
             {!!onBack && (
               <TouchableOpacity
@@ -156,5 +203,12 @@ const styles = StyleSheet.create({
     color: '#2E8B57',
     fontWeight: '700',
     fontSize: 14,
+  },
+  errorText: {
+    marginTop: 12,
+    color: '#b91c1c',
+    fontWeight: '700',
+    fontSize: 13,
+    textAlign: 'center',
   },
 });

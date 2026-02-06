@@ -13,8 +13,10 @@ import * as ImagePicker from 'expo-image-picker';
 import { Image } from 'expo-image';
 import { useLanguage } from '../context/LanguageContext';
 import { useTheme } from '../context/ThemeContext';
+import { apiPost, apiPostFormData } from '../utils/api';
 
 type AIWoundorRashDetectProps = {
+  accessToken?: string;
   onBack?: () => void;
 };
 
@@ -45,6 +47,47 @@ type Hospital = {
 };
 
 const roundPct = (value: number) => `${Math.round(value * 100)}%`;
+
+function mapSeverity(value: unknown): DetectionResult['severity'] {
+  const v = String(value ?? '').toLowerCase();
+  if (v.includes('high')) return 'high';
+  if (v.includes('medium')) return 'medium';
+  return 'low';
+}
+
+function inferMimeType(uri: string): string {
+  const lowered = uri.toLowerCase();
+  if (lowered.endsWith('.png')) return 'image/png';
+  if (lowered.endsWith('.webp')) return 'image/webp';
+  if (lowered.endsWith('.heic')) return 'image/heic';
+  return 'image/jpeg';
+}
+
+function inferFileName(uri: string): string {
+  const parts = uri.split('/');
+  const last = parts[parts.length - 1];
+  if (last && last.includes('.')) return last;
+  const ext = inferMimeType(uri) === 'image/png' ? 'png' : 'jpg';
+  return `skin.${ext}`;
+}
+
+function mapBackendResultToUi(data: any): DetectionResult {
+  const diseaseName = String(data?.disease_name ?? data?.diseaseName ?? data?.predicted_disease ?? 'Unknown');
+  const diseaseType = String(data?.type ?? '');
+  const confidence = Number(data?.confidence ?? 0);
+  const severity = mapSeverity(data?.severity);
+  const description = String(data?.description ?? '');
+  const recommendation = String(data?.recommendation ?? '');
+
+  return {
+    kind: 'rash',
+    label: diseaseType ? `${diseaseName} (${diseaseType})` : diseaseName,
+    confidence: Number.isFinite(confidence) ? confidence : 0,
+    severity,
+    details: description || (recommendation ? recommendation : 'Analysis completed.'),
+    nextSteps: recommendation ? [recommendation] : [],
+  };
+}
 
 function buildFakeResult(uri: string): DetectionResult {
   const lowered = uri.toLowerCase();
@@ -127,14 +170,16 @@ function buildHospitals(): Hospital[] {
   ];
 }
 
-export default function AIWoundorRashDetect({ onBack }: AIWoundorRashDetectProps) {
+export default function AIWoundorRashDetect({ accessToken, onBack }: AIWoundorRashDetectProps) {
   const { language } = useLanguage();
   const { colors, mode } = useTheme();
   const insets = useSafeAreaInsets();
 
   const [imageUri, setImageUri] = useState<string | null>(null);
+  const [imageBase64, setImageBase64] = useState<string | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [result, setResult] = useState<DetectionResult | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string>('');
 
   const severityBg = useMemo(() => {
     const severity = result?.severity;
@@ -201,6 +246,7 @@ export default function AIWoundorRashDetect({ onBack }: AIWoundorRashDetectProps
       mediaTypes: ['images'],
       quality: 0.9,
       allowsEditing: true,
+      base64: true,
     });
 
     if (picked.canceled) return;
@@ -208,7 +254,8 @@ export default function AIWoundorRashDetect({ onBack }: AIWoundorRashDetectProps
     const uri = picked.assets?.[0]?.uri;
     if (!uri) return;
 
-    await runAnalysis(uri);
+    const b64 = picked.assets?.[0]?.base64 ?? null;
+    await runAnalysis(uri, b64);
   };
 
   const handleTakePhoto = async () => {
@@ -218,6 +265,7 @@ export default function AIWoundorRashDetect({ onBack }: AIWoundorRashDetectProps
     const shot = await ImagePicker.launchCameraAsync({
       quality: 0.9,
       allowsEditing: true,
+      base64: true,
     });
 
     if (shot.canceled) return;
@@ -225,19 +273,92 @@ export default function AIWoundorRashDetect({ onBack }: AIWoundorRashDetectProps
     const uri = shot.assets?.[0]?.uri;
     if (!uri) return;
 
-    await runAnalysis(uri);
+    const b64 = shot.assets?.[0]?.base64 ?? null;
+    await runAnalysis(uri, b64);
   };
 
-  const runAnalysis = async (uri: string) => {
+  const runAnalysis = async (uri: string, b64?: string | null) => {
     setImageUri(uri);
+    setImageBase64(b64 ?? null);
     setResult(null);
     setIsAnalyzing(true);
+    setErrorMessage('');
 
-    // UI-only demo: simulate network/model time
-    await new Promise((r) => setTimeout(r, 900));
+    if (!accessToken) {
+      setErrorMessage('Please log in to analyze images');
+      setIsAnalyzing(false);
+      return;
+    }
 
-    const fake = buildFakeResult(uri);
-    setResult(fake);
+    // Prefer JSON base64 to avoid multipart chunked-upload issues on some Android phones.
+    if (b64) {
+      if (!accessToken) {
+        setErrorMessage('Authentication token is missing. Please log in again.');
+        setIsAnalyzing(false);
+        return;
+      }
+
+      const response = await apiPost<any>('/api/skin-disease/predict', {
+        image_base64: b64,
+        filename: inferFileName(uri),
+      }, accessToken);
+
+      if (!response.ok) {
+        const msg =
+          (response.data && (response.data.message || response.data.error)) ||
+          (response.status === 401 ? 'Session expired. Please log in again.' : 'Failed to analyze image');
+        setErrorMessage(String(msg));
+        setIsAnalyzing(false);
+        return;
+      }
+
+      if (response.data && response.data.success === false) {
+        setErrorMessage(String(response.data.message || 'Failed to analyze image'));
+        setIsAnalyzing(false);
+        return;
+      }
+
+      const mapped = mapBackendResultToUi(response.data?.data);
+      setResult(mapped);
+      setIsAnalyzing(false);
+      return;
+    }
+
+    // Fallback: multipart upload
+    const form = new FormData();
+    const name = inferFileName(uri);
+    const mimeType = inferMimeType(uri);
+
+    try {
+      const fileRes = await fetch(uri);
+      const blob = await fileRes.blob();
+      form.append('image', blob as any, name);
+    } catch {
+      form.append('image', { uri, name, type: mimeType } as any);
+    }
+
+    const response = await apiPostFormData<any>('/api/skin-disease/predict', form, accessToken);
+    if (!response.ok) {
+      if (response.status === 0 && response.data?.url) {
+        setErrorMessage(`Network request failed: ${String(response.data.url)}`);
+      } else {
+        const msg =
+          (response.data && (response.data.message || response.data.error)) ||
+          (response.status === 401 ? 'Session expired. Please log in again.' : 'Failed to analyze image');
+        setErrorMessage(String(msg));
+      }
+      setIsAnalyzing(false);
+      return;
+    }
+
+    if (response.data && response.data.success === false) {
+      setErrorMessage(String(response.data.message || 'Failed to analyze image'));
+      setIsAnalyzing(false);
+      return;
+    }
+
+    const mapped = mapBackendResultToUi(response.data?.data);
+    setResult(mapped);
     setIsAnalyzing(false);
   };
 
@@ -305,6 +426,13 @@ export default function AIWoundorRashDetect({ onBack }: AIWoundorRashDetectProps
           <View style={styles.analyzingRow}>
             <ActivityIndicator />
             <Text style={[styles.analyzingText, { color: colors.subtext }]}>{analyzeLabel}</Text>
+          </View>
+        )}
+
+        {!!errorMessage && !isAnalyzing && (
+          <View style={styles.errorWrap}>
+            <Text style={styles.errorIcon}>⚠️</Text>
+            <Text style={[styles.errorText, { color: colors.text }]}>{errorMessage}</Text>
           </View>
         )}
 
@@ -435,6 +563,22 @@ const styles = StyleSheet.create({
   container: {
     paddingHorizontal: 20,
     paddingTop: 18,
+  },
+  errorWrap: {
+    marginTop: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingHorizontal: 12,
+  },
+  errorIcon: {
+    fontSize: 16,
+  },
+  errorText: {
+    fontSize: 13,
+    fontWeight: '800',
+    textAlign: 'center',
   },
   headerRow: {
     flexDirection: 'row',

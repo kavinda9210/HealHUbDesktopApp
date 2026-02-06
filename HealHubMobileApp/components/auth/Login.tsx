@@ -10,19 +10,23 @@ import {
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLanguage } from '../../context/LanguageContext';
+import { apiPost } from '../../utils/api';
 
 export type LoginProps = {
   onLogin?: (params: { email: string; password: string }) => void;
+  onLoginSuccess?: (auth: { accessToken: string; refreshToken: string; user: any }) => void;
   onForgotPassword?: () => void;
   onRegister?: () => void;
 };
 
-export default function Login({ onLogin, onForgotPassword, onRegister }: LoginProps) {
+export default function Login({ onLogin, onLoginSuccess, onForgotPassword, onRegister }: LoginProps) {
   const { language } = useLanguage();
   const insets = useSafeAreaInsets();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string>('');
 
   const languageLabel = useMemo(() => {
     if (language === 'sinhala') return 'සිංහල';
@@ -78,6 +82,56 @@ export default function Login({ onLogin, onForgotPassword, onRegister }: LoginPr
     return 'Create an account';
   }, [language]);
 
+  async function submitLogin() {
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail) {
+      setErrorMessage('Email is required');
+      return;
+    }
+    if (!password) {
+      setErrorMessage('Password is required');
+      return;
+    }
+
+    setIsSubmitting(true);
+    setErrorMessage('');
+    try {
+      const result = await apiPost<any>('/api/auth/login', {
+        email: trimmedEmail,
+        password,
+      });
+
+      if (!result.ok) {
+        const msg =
+          (result.data && (result.data.message || result.data.error)) ||
+          (result.status === 401
+            ? 'Invalid email or password'
+            : result.status === 403
+              ? 'Please verify your email first'
+              : 'Login failed');
+        setErrorMessage(String(msg));
+        return;
+      }
+
+      if (result.data && result.data.success === false) {
+        setErrorMessage(String(result.data.message || 'Login failed'));
+        return;
+      }
+
+      const accessToken = String(result.data?.access_token ?? '');
+      const refreshToken = String(result.data?.refresh_token ?? '');
+      if (accessToken && refreshToken) {
+        onLoginSuccess?.({ accessToken, refreshToken, user: result.data?.user });
+      }
+
+      onLogin?.({ email: trimmedEmail, password });
+    } catch (e: any) {
+      setErrorMessage(e?.message ? String(e.message) : 'Login failed');
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
       <KeyboardAvoidingView
@@ -125,10 +179,21 @@ export default function Login({ onLogin, onForgotPassword, onRegister }: LoginPr
             <TouchableOpacity
               style={styles.button}
               activeOpacity={0.85}
-              onPress={() => onLogin?.({ email, password })}
+              disabled={isSubmitting}
+              onPress={submitLogin}
             >
-              <Text style={styles.buttonText}>{buttonLabel}</Text>
+              <Text style={styles.buttonText}>
+                {isSubmitting
+                  ? language === 'sinhala'
+                    ? 'සකසමින්...'
+                    : language === 'tamil'
+                      ? 'செயலாக்கப்படுகிறது...'
+                      : 'Signing in...'
+                  : buttonLabel}
+              </Text>
             </TouchableOpacity>
+
+            {!!errorMessage && <Text style={styles.errorText}>{errorMessage}</Text>}
 
             <View style={styles.linksRow}>
               <TouchableOpacity
@@ -150,13 +215,6 @@ export default function Login({ onLogin, onForgotPassword, onRegister }: LoginPr
               </TouchableOpacity>
             </View>
 
-            <Text style={styles.footerNote}>
-              {language === 'sinhala'
-                ? 'මෙය UI පමණි (ලොගින් ක්‍රියාකාරීත්වය පසුව එකතු කරමු).'
-                : language === 'tamil'
-                  ? 'இது UI மட்டும் (உள்நுழை செயல்பாட்டை பின்னர் சேர்க்கலாம்).'
-                  : 'UI only (we can add auth later).'}
-            </Text>
           </View>
         </View>
       </KeyboardAvoidingView>
@@ -255,10 +313,11 @@ const styles = StyleSheet.create({
     height: 14,
     backgroundColor: '#cbd5e1',
   },
-  footerNote: {
+  errorText: {
     marginTop: 12,
-    fontSize: 12,
-    color: '#64748b',
+    fontSize: 13,
+    color: '#b91c1c',
     textAlign: 'center',
+    fontWeight: '700',
   },
 });

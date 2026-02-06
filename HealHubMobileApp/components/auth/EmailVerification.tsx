@@ -14,7 +14,7 @@ import { apiPost } from '../../utils/api';
 
 export type EmailVerificationProps = {
   email?: string;
-  onVerified?: () => void;
+  onVerified?: (auth: { accessToken: string; refreshToken: string; user: any }) => void;
   onBack?: () => void;
 };
 
@@ -91,7 +91,9 @@ export default function EmailVerification({ email, onVerified, onBack }: EmailVe
         return;
       }
 
-      onVerified?.();
+      const accessToken = String(result.data?.access_token ?? '');
+      const refreshToken = String(result.data?.refresh_token ?? '');
+      onVerified?.({ accessToken, refreshToken, user: result.data?.user });
     } catch (e: any) {
       setErrorMessage(e?.message ? String(e.message) : 'Verification failed');
     } finally {

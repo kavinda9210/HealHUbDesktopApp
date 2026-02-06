@@ -14,15 +14,17 @@ import EmailChangeVerificationCard from '../components/patient/profile/EmailChan
 import DeleteAccountCard from '../components/patient/profile/DeleteAccountCard';
 import LanguagePickerInline from '../components/settings/LanguagePickerInline';
 import ThemeToggleCard from '../components/settings/ThemeToggleCard';
+import { apiGet } from '../utils/api';
 
 type PatientdashboardProps = {
+  accessToken?: string;
   onOpenAiDetect?: () => void;
   onOpenNotifications?: () => void;
   onOpenNearbyAmbulance?: () => void;
   onLogout?: () => void;
 };
 
-export default function Patientdashboard({ onOpenAiDetect, onOpenNotifications, onOpenNearbyAmbulance, onLogout }: PatientdashboardProps) {
+export default function Patientdashboard({ accessToken, onOpenAiDetect, onOpenNotifications, onOpenNearbyAmbulance, onLogout }: PatientdashboardProps) {
   const { language } = useLanguage();
   const { colors, mode } = useTheme();
   const [activeTab, setActiveTab] = useState<PatientTabKey>('home');
@@ -54,6 +56,8 @@ export default function Patientdashboard({ onOpenAiDetect, onOpenNotifications, 
     dateOfBirth: '1998-04-12',
     address: 'Colombo, Sri Lanka',
   });
+
+  const [profileLoadError, setProfileLoadError] = useState<string>('');
 
   const notificationCount = 3; // UI demo: replace with real notifications count later
 
@@ -217,6 +221,47 @@ export default function Patientdashboard({ onOpenAiDetect, onOpenNotifications, 
     };
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadProfile() {
+      if (!accessToken) return;
+      setProfileLoadError('');
+
+      const result = await apiGet<any>('/api/auth/profile', accessToken);
+      if (cancelled) return;
+
+      if (!result.ok) {
+        const msg = (result.data && (result.data.message || result.data.error)) || 'Failed to load profile';
+        setProfileLoadError(String(msg));
+        return;
+      }
+
+      const data = result.data?.data ?? result.data;
+      if (!data) {
+        setProfileLoadError('Failed to load profile');
+        return;
+      }
+
+      const mapped: PatientUser = {
+        fullName: String(data.full_name ?? data.fullName ?? user.fullName),
+        email: String(data.email ?? user.email),
+        phone: String(data.phone ?? user.phone),
+        gender: String(data.gender ?? user.gender),
+        dateOfBirth: String(data.dob ?? data.date_of_birth ?? data.dateOfBirth ?? user.dateOfBirth),
+        address: String(data.address ?? user.address),
+      };
+
+      setUser(mapped);
+    }
+
+    loadProfile();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [accessToken]);
+
   const showReminderToast = (variant: 'success' | 'error' | 'info', message: string) => {
     if (reminderToastTimer.current) {
       clearTimeout(reminderToastTimer.current);
@@ -231,6 +276,11 @@ export default function Patientdashboard({ onOpenAiDetect, onOpenNotifications, 
       setReminderToastVisible(false);
     }, 2500);
   };
+
+  useEffect(() => {
+    if (!profileLoadError) return;
+    showReminderToast('error', profileLoadError);
+  }, [profileLoadError]);
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top', 'bottom']}>
