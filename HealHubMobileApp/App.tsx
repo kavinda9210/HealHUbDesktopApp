@@ -27,10 +27,19 @@ import { saveAuth, clearAuth } from './utils/authStorage';
 import { stopAmbulanceBackgroundLocationAsync } from './utils/ambulanceBackgroundLocation';
 import { setShareEnabled } from './utils/ambulanceLocationStorage';
 
+console.log('[App] App.tsx module loaded');
+
 // CRITICAL: Prevent auto-hide AND keep native splash visible
 SplashScreen.preventAutoHideAsync()
   .then(result => console.log('SplashScreen.preventAutoHideAsync() succeeded:', result))
   .catch(console.warn);
+
+// Fail-safe: never allow native splash to block indefinitely.
+setTimeout(() => {
+  SplashScreen.hideAsync()
+    .then(() => console.log('[Splash] Fail-safe hideAsync() executed'))
+    .catch((e) => console.log('[Splash] Fail-safe hideAsync() failed:', e));
+}, 6000);
 
 export default function AppWrapper() {
   return (
