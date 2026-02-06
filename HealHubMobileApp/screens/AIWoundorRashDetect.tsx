@@ -7,10 +7,13 @@ import {
   ActivityIndicator,
   ScrollView,
   StatusBar,
+  Linking,
+  Platform,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import { Image } from 'expo-image';
+import * as Location from 'expo-location';
 import { useLanguage } from '../context/LanguageContext';
 import { useTheme } from '../context/ThemeContext';
 import { apiPost, apiPostFormData } from '../utils/api';
@@ -39,14 +42,31 @@ type Doctor = {
   eta: string;
 };
 
-type Hospital = {
+type NearbyPlace = {
   id: string;
   name: string;
+  lat: number;
+  lng: number;
   distanceKm: number;
-  openNow: boolean;
+  category: 'hospital' | 'dermatology' | 'clinic';
 };
 
 const roundPct = (value: number) => `${Math.round(value * 100)}%`;
+
+function toRad(deg: number) {
+  return (deg * Math.PI) / 180;
+}
+
+function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number) {
+  const R = 6371;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
 
 function mapSeverity(value: unknown): DetectionResult['severity'] {
   const v = String(value ?? '').toLowerCase();
@@ -162,12 +182,50 @@ function buildDoctors(kind: DetectionKind): Doctor[] {
   ];
 }
 
-function buildHospitals(): Hospital[] {
-  return [
-    { id: 'h1', name: 'City General Hospital', distanceKm: 2.1, openNow: true },
-    { id: 'h2', name: 'HealHub Care Center', distanceKm: 3.7, openNow: true },
-    { id: 'h3', name: 'Community Clinic', distanceKm: 5.4, openNow: false },
-  ];
+function buildNearbyCareQuery(result: DetectionResult): string {
+  const base = result.kind === 'wound' || result.severity === 'high' ? 'hospital' : 'dermatology clinic';
+  const label = String(result.label || '').trim();
+  if (!label) return base;
+  // Keep the query simple so Maps returns good results.
+  return `${base} for ${label}`;
+}
+
+function buildOverpassQuery(lat: number, lng: number, radiusMeters: number, preferHospitals: boolean) {
+  // Keep query small and stable; Overpass can be rate-limited.
+  const around = `around:${Math.max(500, Math.min(20000, Math.round(radiusMeters)))},${lat},${lng}`;
+
+  // Hospitals
+  const hospitals = [
+    `node["amenity"="hospital"](${around});`,
+    `way["amenity"="hospital"](${around});`,
+    `relation["amenity"="hospital"](${around});`,
+  ].join('\n');
+
+  // Dermatology / clinics
+  const derm = [
+    `node["healthcare"="dermatology"](${around});`,
+    `way["healthcare"="dermatology"](${around});`,
+    `relation["healthcare"="dermatology"](${around});`,
+    `node["amenity"="clinic"](${around});`,
+    `way["amenity"="clinic"](${around});`,
+    `relation["amenity"="clinic"](${around});`,
+  ].join('\n');
+
+  const body = preferHospitals ? `${hospitals}\n${derm}` : `${derm}\n${hospitals}`;
+  return `[out:json][timeout:25];(\n${body}\n);out center 40;`;
+}
+
+function getElementCenter(el: any): { lat: number; lng: number } | null {
+  if (typeof el?.lat === 'number' && typeof el?.lon === 'number') return { lat: el.lat, lng: el.lon };
+  if (typeof el?.center?.lat === 'number' && typeof el?.center?.lon === 'number') return { lat: el.center.lat, lng: el.center.lon };
+  return null;
+}
+
+function categorize(el: any): NearbyPlace['category'] {
+  const tags = el?.tags ?? {};
+  if (tags.amenity === 'hospital') return 'hospital';
+  if (tags.healthcare === 'dermatology') return 'dermatology';
+  return 'clinic';
 }
 
 export default function AIWoundorRashDetect({ accessToken, onBack }: AIWoundorRashDetectProps) {
@@ -180,6 +238,10 @@ export default function AIWoundorRashDetect({ accessToken, onBack }: AIWoundorRa
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [result, setResult] = useState<DetectionResult | null>(null);
   const [errorMessage, setErrorMessage] = useState<string>('');
+
+  const [nearbyLoading, setNearbyLoading] = useState(false);
+  const [nearbyPlaces, setNearbyPlaces] = useState<NearbyPlace[] | null>(null);
+  const [nearbyError, setNearbyError] = useState<string>('');
 
   const severityBg = useMemo(() => {
     const severity = result?.severity;
@@ -237,6 +299,177 @@ export default function AIWoundorRashDetect({ accessToken, onBack }: AIWoundorRa
     if (language === 'tamil') return 'அருகிலுள்ள மருத்துவமனைகள்';
     return 'Nearby hospitals';
   }, [language]);
+
+  const findNearbyLabel = useMemo(() => {
+    if (language === 'sinhala') return 'ආසන්න රෝහල්/චර්ම වෛද්‍ය සේවා සොයන්න';
+    if (language === 'tamil') return 'அருகிலுள்ள மருத்துவமனை/தோல் மருத்துவ சேவைகளை தேடு';
+    return 'Find nearby hospitals / dermatology';
+  }, [language]);
+
+  const openMapsLabel = useMemo(() => {
+    if (language === 'sinhala') return 'Maps තුළ විවෘත කරන්න';
+    if (language === 'tamil') return 'Maps இல் திற';
+    return 'Open in Maps';
+  }, [language]);
+
+  const directionsLabel = useMemo(() => {
+    if (language === 'sinhala') return 'දිශානතිය';
+    if (language === 'tamil') return 'வழிநடத்து';
+    return 'Directions';
+  }, [language]);
+
+  const openNearbyCareInMaps = async () => {
+    if (!result) return;
+
+    try {
+      const perm = await Location.requestForegroundPermissionsAsync();
+      if (perm.status !== Location.PermissionStatus.GRANTED) {
+        setErrorMessage(
+          language === 'sinhala'
+            ? 'ස්ථානයට අවසර අවශ්‍යයි. Location permission ලබා දෙන්න.'
+            : language === 'tamil'
+              ? 'இட அனுமதி தேவை. Location permission வழங்கவும்.'
+              : 'Location permission is required.'
+        );
+        return;
+      }
+
+      const current = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      const lat = current.coords.latitude;
+      const lng = current.coords.longitude;
+
+      const query = buildNearbyCareQuery(result);
+
+      const urls: string[] = Platform.OS === 'android'
+        ? [
+            // Prefer native geo intent on Android.
+            `geo:${lat},${lng}?q=${encodeURIComponent(query)}`,
+            `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${query} near ${lat},${lng}`)}`,
+          ]
+        : [
+            `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${query} near ${lat},${lng}`)}`,
+          ];
+
+      for (const url of urls) {
+        try {
+          await Linking.openURL(url);
+          return;
+        } catch {
+          // try next
+        }
+      }
+
+      setErrorMessage(language === 'sinhala' ? 'Maps විවෘත කළ නොහැක.' : language === 'tamil' ? 'Maps திறக்க முடியவில்லை.' : 'Cannot open Maps.');
+    } catch (e: any) {
+      setErrorMessage(e?.message ? String(e.message) : 'Failed to open Maps');
+    }
+  };
+
+  const fetchNearbyCarePlaces = async () => {
+    if (!result) return;
+
+    setNearbyError('');
+    setNearbyPlaces(null);
+    setNearbyLoading(true);
+    try {
+      const perm = await Location.requestForegroundPermissionsAsync();
+      if (perm.status !== Location.PermissionStatus.GRANTED) {
+        setNearbyError(
+          language === 'sinhala'
+            ? 'ස්ථානයට අවසර අවශ්‍යයි. Location permission ලබා දෙන්න.'
+            : language === 'tamil'
+              ? 'இட அனுமதி தேவை. Location permission வழங்கவும்.'
+              : 'Location permission is required.'
+        );
+        return;
+      }
+
+      const current = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      const lat = current.coords.latitude;
+      const lng = current.coords.longitude;
+
+      const preferHospitals = result.kind === 'wound' || result.severity === 'high';
+      const radius = preferHospitals ? 12000 : 7000;
+      const query = buildOverpassQuery(lat, lng, radius, preferHospitals);
+
+      const overpassUrl = 'https://overpass-api.de/api/interpreter';
+      const res = await fetch(overpassUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
+        },
+        body: `data=${encodeURIComponent(query)}`,
+      });
+
+      if (!res.ok) {
+        setNearbyError(`Nearby search failed (${res.status})`);
+        return;
+      }
+
+      const data = await res.json();
+      const elements: any[] = Array.isArray(data?.elements) ? data.elements : [];
+
+      const places: NearbyPlace[] = [];
+      const seen = new Set<string>();
+
+      for (const el of elements) {
+        const center = getElementCenter(el);
+        if (!center) continue;
+        const name = String(el?.tags?.name ?? '').trim();
+        if (!name) continue;
+
+        const id = `${String(el?.type ?? 'el')}:${String(el?.id ?? '')}`;
+        if (seen.has(id)) continue;
+        seen.add(id);
+
+        const distanceKm = haversineKm(lat, lng, center.lat, center.lng);
+        places.push({
+          id,
+          name,
+          lat: center.lat,
+          lng: center.lng,
+          distanceKm,
+          category: categorize(el),
+        });
+      }
+
+      places.sort((a, b) => a.distanceKm - b.distanceKm);
+      setNearbyPlaces(places.slice(0, 12));
+    } catch (e: any) {
+      setNearbyError(e?.message ? String(e.message) : 'Nearby search failed');
+    } finally {
+      setNearbyLoading(false);
+    }
+  };
+
+  const openPlaceDirections = async (place: NearbyPlace) => {
+    const dest = `${place.lat},${place.lng}`;
+    const label = place.name ? `(${place.name})` : '';
+
+    const urls: string[] = Platform.OS === 'android'
+      ? [
+          // Prefer Google Maps navigation intent.
+          `google.navigation:q=${encodeURIComponent(dest)}`,
+          // Generic geo intent.
+          `geo:${dest}?q=${encodeURIComponent(`${dest}${label}`)}`,
+          // HTTPS fallback.
+          `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(dest)}`,
+        ]
+      : [
+          `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(dest)}`,
+        ];
+
+    for (const url of urls) {
+      try {
+        await Linking.openURL(url);
+        return;
+      } catch {
+        // try next
+      }
+    }
+
+    setErrorMessage(language === 'sinhala' ? 'Maps විවෘත කළ නොහැක.' : language === 'tamil' ? 'Maps திறக்க முடியவில்லை.' : 'Cannot open Maps.');
+  };
 
   const handlePickFromLibrary = async () => {
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -363,7 +596,6 @@ export default function AIWoundorRashDetect({ accessToken, onBack }: AIWoundorRa
   };
 
   const doctors = useMemo(() => buildDoctors(result?.kind ?? 'unknown'), [result?.kind]);
-  const hospitals = useMemo(() => buildHospitals(), []);
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: colors.background }]} edges={['top', 'bottom']}>
@@ -523,31 +755,67 @@ export default function AIWoundorRashDetect({ accessToken, onBack }: AIWoundorRa
         {!!result && (
           <View style={[styles.listCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <Text style={[styles.sectionTitle, { color: colors.text }]}>{hospitalsTitle}</Text>
-            {hospitals.map((h) => (
-              <View key={h.id} style={[styles.rowItem, { borderTopColor: colors.border }]}>
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.rowTitle, { color: colors.text }]}>{h.name}</Text>
-                  <Text style={[styles.rowSub, { color: colors.subtext }]}>
-                    {h.distanceKm.toFixed(1)} km • {h.openNow ? (language === 'sinhala' ? 'විවෘතයි' : language === 'tamil' ? 'திறந்துள்ளது' : 'Open') : (language === 'sinhala' ? 'වසා ඇත' : language === 'tamil' ? 'மூடப்பட்டுள்ளது' : 'Closed')}
-                  </Text>
-                </View>
+
+            <TouchableOpacity
+              style={[styles.primaryNearbyBtn, { backgroundColor: colors.primary }]}
+              activeOpacity={0.85}
+              onPress={fetchNearbyCarePlaces}
+              disabled={nearbyLoading}
+            >
+              {nearbyLoading ? (
+                <ActivityIndicator color="#ffffff" />
+              ) : (
+                <Text style={styles.primaryNearbyBtnText}>{findNearbyLabel}</Text>
+              )}
+            </TouchableOpacity>
+
+            {!!nearbyError && !nearbyLoading && (
+              <View style={styles.errorWrap}>
+                <Text style={styles.errorIcon}>⚠️</Text>
+                <Text style={[styles.errorText, { color: colors.text }]}>{nearbyError}</Text>
+              </View>
+            )}
+
+            {!!nearbyPlaces && nearbyPlaces.length === 0 && !nearbyLoading && (
+              <Text style={[styles.disclaimer, { color: colors.subtext }]}>No nearby places found.</Text>
+            )}
+
+            {!!nearbyPlaces && nearbyPlaces.length > 0 && (
+              <View style={{ marginTop: 10 }}>
+                {nearbyPlaces.map((p) => (
+                  <View key={p.id} style={[styles.rowItem, { borderTopColor: colors.border }]}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.rowTitle, { color: colors.text }]}>{p.name}</Text>
+                      <Text style={[styles.rowSub, { color: colors.subtext }]}>
+                        {p.distanceKm.toFixed(1)} km • {p.category}
+                      </Text>
+                    </View>
+                    <TouchableOpacity
+                      style={[styles.smallButtonOutline, { backgroundColor: colors.background, borderColor: colors.primary }]}
+                      activeOpacity={0.85}
+                      onPress={() => openPlaceDirections(p)}
+                    >
+                      <Text style={[styles.smallButtonOutlineText, { color: colors.primary }]}>{directionsLabel}</Text>
+                    </TouchableOpacity>
+                  </View>
+                ))}
+
                 <TouchableOpacity
-                  style={[styles.smallButtonOutline, { backgroundColor: colors.background, borderColor: colors.primary }]}
+                  style={[styles.smallButtonOutline, { marginTop: 10, alignSelf: 'flex-start', backgroundColor: colors.background, borderColor: colors.border }]}
                   activeOpacity={0.85}
+                  onPress={openNearbyCareInMaps}
                 >
-                  <Text style={[styles.smallButtonOutlineText, { color: colors.primary }]}>
-                    {language === 'sinhala' ? 'දිශානතිය' : language === 'tamil' ? 'வழிநடத்து' : 'Directions'}
-                  </Text>
+                  <Text style={[styles.smallButtonOutlineText, { color: colors.subtext }]}>{openMapsLabel}</Text>
                 </TouchableOpacity>
               </View>
-            ))}
+            )}
 
             <Text style={[styles.disclaimer, { color: colors.subtext }]}>
               {language === 'sinhala'
-                ? 'සටහන: “ආසන්න” ලැයිස්තුව UI ඩෙමෝ එකක්. පසුව ස්ථානය (GPS) මත පදනම් කර ගන්න පුළුවන්.'
+                ? 'GPS භාවිතා කර ආසන්න ස්ථාන සොයයි (OpenStreetMap දත්ත).'
                 : language === 'tamil'
-                  ? 'குறிப்பு: “அருகில்” பட்டியல் UI டெமோ. பின்னர் GPS அடிப்படையில் மாற்றலாம்.'
-                  : 'Note: “Nearby” list is a UI demo. We can power this with GPS later.'}
+                  ? 'GPS பயன்படுத்தி அருகிலுள்ள இடங்களை தேடும் (OpenStreetMap தரவு).'
+                  : 'Uses GPS to find nearby places (OpenStreetMap data).'}
             </Text>
           </View>
         )}
@@ -559,6 +827,20 @@ export default function AIWoundorRashDetect({ accessToken, onBack }: AIWoundorRa
 const styles = StyleSheet.create({
   safe: {
     flex: 1,
+  },
+  primaryNearbyBtn: {
+    marginTop: 10,
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  primaryNearbyBtnText: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '900',
+    textAlign: 'center',
   },
   container: {
     paddingHorizontal: 20,
