@@ -22,6 +22,11 @@ import AmbulanceStaffDashboard from './screens/AmbulanceStaffDashboard';
 import { configureAlarmNotificationsAsync } from './utils/alarms';
 import Constants from 'expo-constants';
 
+import './utils/ambulanceBackgroundLocation';
+import { saveAuth, clearAuth } from './utils/authStorage';
+import { stopAmbulanceBackgroundLocationAsync } from './utils/ambulanceBackgroundLocation';
+import { setShareEnabled } from './utils/ambulanceLocationStorage';
+
 // CRITICAL: Prevent auto-hide AND keep native splash visible
 SplashScreen.preventAutoHideAsync()
   .then(result => console.log('SplashScreen.preventAutoHideAsync() succeeded:', result))
@@ -150,6 +155,7 @@ function ForceNativeSplashApp() {
         onLoginSuccess={({ accessToken, refreshToken, user }) => {
           setAccessToken(accessToken);
           setRefreshToken(refreshToken);
+          saveAuth({ accessToken, refreshToken, role: String(user?.role ?? '') }).catch(() => {});
           goPostAuth(user);
         }}
         onForgotPassword={handleForgotPassword}
@@ -209,6 +215,7 @@ function ForceNativeSplashApp() {
           console.log('Email verified successfully');
           setAccessToken(accessToken);
           setRefreshToken(refreshToken);
+          saveAuth({ accessToken, refreshToken, role: String(user?.role ?? '') }).catch(() => {});
           goPostAuth(user);
         }}
         onBack={() => setScreen('register')}
@@ -223,6 +230,9 @@ function ForceNativeSplashApp() {
         onLogout={() => {
           setAccessToken('');
           setRefreshToken('');
+          setShareEnabled(false).catch(() => {});
+          stopAmbulanceBackgroundLocationAsync().catch(() => {});
+          clearAuth().catch(() => {});
           setScreen('login');
         }}
         onOpenPatientDashboard={() => setScreen('patient-dashboard')}
@@ -240,6 +250,9 @@ function ForceNativeSplashApp() {
         onLogout={() => {
           setAccessToken('');
           setRefreshToken('');
+          setShareEnabled(false).catch(() => {});
+          stopAmbulanceBackgroundLocationAsync().catch(() => {});
+          clearAuth().catch(() => {});
           setScreen('login');
         }}
       />
@@ -266,6 +279,9 @@ function ForceNativeSplashApp() {
         onLogout={() => {
           setAccessToken('');
           setRefreshToken('');
+          setShareEnabled(false).catch(() => {});
+          stopAmbulanceBackgroundLocationAsync().catch(() => {});
+          clearAuth().catch(() => {});
           setScreen('login');
         }}
       />

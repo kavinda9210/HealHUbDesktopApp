@@ -18,6 +18,55 @@ logger = logging.getLogger(__name__)
 
 patient_bp = Blueprint('patient', __name__)
 
+@patient_bp.route('/notifications', methods=['GET'])
+@jwt_required()
+def get_patient_notifications():
+    """Get notifications for the current patient user"""
+    try:
+        current_user_id = get_jwt_identity()
+
+        notification_type = request.args.get('type')
+        is_read = request.args.get('is_read')
+        limit = int(request.args.get('limit', 50))
+
+        query_params = {
+            'filter_user_id': current_user_id,
+            'limit': limit,
+            'order_by': 'created_at',
+            'order_desc': True
+        }
+
+        if notification_type:
+            query_params['filter_type'] = notification_type
+
+        if is_read is not None:
+            if isinstance(is_read, str):
+                query_params['filter_is_read'] = is_read.lower() in ['true', '1', 'yes']
+            else:
+                query_params['filter_is_read'] = bool(is_read)
+
+        result = SupabaseClient.execute_query('notifications', 'select', **query_params)
+
+        if not result['success']:
+            return jsonify({
+                'success': False,
+                'message': 'Failed to fetch notifications'
+            }), 500
+
+        return jsonify({
+            'success': True,
+            'data': result['data'] or [],
+            'count': len(result['data'] or [])
+        }), 200
+
+    except Exception as e:
+        logger.error(f"Get patient notifications error: {str(e)}")
+        return jsonify({
+            'success': False,
+            'message': 'Failed to get notifications',
+            'error': str(e)
+        }), 500
+
 # Helper function to get patient ID from user ID
 def get_patient_id(user_id: str):
     """Get patient ID from user ID"""
@@ -800,7 +849,7 @@ def request_ambulance(ambulance_id: int):
         patient = patient_result['data'][0]
         
         # Create notification for ambulance staff
-        SupabaseClient.execute_query(
+        staff_notification_result = SupabaseClient.execute_query(
             'notifications',
             'insert',
             user_id=ambulance['user_id'],
@@ -808,8 +857,32 @@ def request_ambulance(ambulance_id: int):
             message=(
                 f"Patient {patient['full_name']} ({patient['phone']}) requested an ambulance. "
                 f"Location: {data['latitude']}, {data['longitude']}. "
-                f"Directions: https://www.google.com/maps/dir/?api=1&destination={data['latitude']},{data['longitude']}"
+                f"Directions: https://www.google.com/maps/dir/?api=1&destination={data['latitude']},{data['longitude']}\n"
+                f"meta_patient_user_id={current_user_id}\n"
+                f"meta_patient_lat={data['latitude']}\n"
+                f"meta_patient_lng={data['longitude']}"
             ),
+            type='Ambulance',
+            created_at=sl_now_iso()
+        )
+
+        staff_notification_id = None
+        if staff_notification_result.get('success') and staff_notification_result.get('data'):
+            staff_notification_id = staff_notification_result['data'][0].get('notification_id')
+
+        # Create a patient-side notification so the patient can see pending/accepted/rejected status
+        patient_message = (
+            f"You requested ambulance {ambulance.get('ambulance_number', ambulance_id)}. "
+            f"Waiting for response.\n"
+            f"meta_ambulance_id={ambulance_id}\n"
+            f"meta_staff_notification_id={staff_notification_id if staff_notification_id is not None else ''}"
+        )
+        SupabaseClient.execute_query(
+            'notifications',
+            'insert',
+            user_id=current_user_id,
+            title='Ambulance Request Sent',
+            message=patient_message,
             type='Ambulance',
             created_at=sl_now_iso()
         )

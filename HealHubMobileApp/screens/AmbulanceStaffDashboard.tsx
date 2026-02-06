@@ -17,6 +17,13 @@ import * as Location from 'expo-location';
 import { useLanguage } from '../context/LanguageContext';
 import { useTheme } from '../context/ThemeContext';
 import { apiGet, apiPost } from '../utils/api';
+import {
+  ensureLocationPermissionsAsync,
+  isAmbulanceBackgroundLocationRunningAsync,
+  startAmbulanceBackgroundLocationAsync,
+  stopAmbulanceBackgroundLocationAsync,
+} from '../utils/ambulanceBackgroundLocation';
+import { setLastAvailability, setShareEnabled } from '../utils/ambulanceLocationStorage';
 
 type AmbulanceStaffDashboardProps = {
   accessToken?: string;
@@ -82,8 +89,6 @@ export default function AmbulanceStaffDashboard({ accessToken, onBack, onLogout 
   const { colors, mode } = useTheme();
   const insets = useSafeAreaInsets();
 
-  const watchSub = useRef<Location.LocationSubscription | null>(null);
-
   const [status, setStatus] = useState<AmbulanceStatus | null>(null);
   const [requests, setRequests] = useState<AmbulanceRequest[]>([]);
 
@@ -99,9 +104,9 @@ export default function AmbulanceStaffDashboard({ accessToken, onBack, onLogout 
   const [regSubmitting, setRegSubmitting] = useState(false);
 
   const title = useMemo(() => {
-    if (language === 'sinhala') return 'ඇම්බියුලන්ස් කාර්ය මණ්ඩල ඩෑෂ්බෝඩ්';
-    if (language === 'tamil') return 'ஆம்புலன்ஸ் பணியாளர் டாஷ்போர்டு';
-    return 'Ambulance Staff Dashboard';
+    if (language === 'sinhala') return 'ඇම්බියුලන්ස් කාර්ය මණ්ඩල';
+    if (language === 'tamil') return 'ஆம்புலன்ஸ் பணியாளர்';
+    return 'Ambulance Staff';
   }, [language]);
 
   const fetchStatus = async () => {
@@ -163,6 +168,7 @@ export default function AmbulanceStaffDashboard({ accessToken, onBack, onLogout 
     }
 
     await fetchStatus();
+    await setLastAvailability(isAvailable);
   };
 
   const updateMyLocationOnce = async () => {
@@ -189,45 +195,35 @@ export default function AmbulanceStaffDashboard({ accessToken, onBack, onLogout 
   };
 
   const startSharing = async () => {
-    if (!accessToken) return;
-
-    setErrorMessage('');
-    const perm = await Location.requestForegroundPermissionsAsync();
-    if (perm.status !== Location.PermissionStatus.GRANTED) {
-      setErrorMessage('Location permission is required.');
+    if (!accessToken) {
+      setErrorMessage('Authentication token is missing. Please log in again.');
       return;
     }
 
+    setErrorMessage('');
+    const perm = await ensureLocationPermissionsAsync();
+    if (!perm.ok) {
+      setErrorMessage(perm.message);
+      return;
+    }
+
+    await setLastAvailability(status?.is_available ?? true);
+    await setShareEnabled(true);
+    await startAmbulanceBackgroundLocationAsync();
     setSharing(true);
-    watchSub.current?.remove();
-    watchSub.current = await Location.watchPositionAsync(
-      {
-        accuracy: Location.Accuracy.Balanced,
-        timeInterval: 8000,
-        distanceInterval: 30,
-      },
-      async (pos) => {
-        try {
-          await apiPost<any>(
-            '/api/ambulance/update-location',
-            {
-              latitude: pos.coords.latitude,
-              longitude: pos.coords.longitude,
-              is_available: status?.is_available ?? true,
-            },
-            accessToken
-          );
-        } catch {
-          // ignore
-        }
-      }
-    );
+
+    // Best-effort immediate update for faster UI feedback
+    try {
+      await updateMyLocationOnce();
+    } catch {
+      // ignore
+    }
   };
 
-  const stopSharing = () => {
+  const stopSharing = async () => {
+    await setShareEnabled(false);
+    await stopAmbulanceBackgroundLocationAsync();
     setSharing(false);
-    watchSub.current?.remove();
-    watchSub.current = null;
   };
 
   const acceptRequest = async (notificationId: number) => {
@@ -307,9 +303,15 @@ export default function AmbulanceStaffDashboard({ accessToken, onBack, onLogout 
     fetchStatus();
     fetchRequests();
 
+    // Sync toggle state with the actual background task
+    isAmbulanceBackgroundLocationRunningAsync().then((running) => {
+      setSharing(running);
+    }).catch(() => {
+      setSharing(false);
+    });
+
     return () => {
-      watchSub.current?.remove();
-      watchSub.current = null;
+      // Don't stop background sharing here; user controls it via toggle.
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [accessToken]);
@@ -398,7 +400,7 @@ export default function AmbulanceStaffDashboard({ accessToken, onBack, onLogout 
                 </TouchableOpacity>
               </View>
 
-              <Text style={[styles.note, { color: colors.subtext }]}>Location shares while this screen is open.</Text>
+              <Text style={[styles.note, { color: colors.subtext }]}>Location shares in background when enabled (stores latest offline and syncs when online).</Text>
             </>
           ) : (
             <>

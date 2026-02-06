@@ -16,6 +16,15 @@ import LanguagePickerInline from '../components/settings/LanguagePickerInline';
 import ThemeToggleCard from '../components/settings/ThemeToggleCard';
 import { apiGet } from '../utils/api';
 
+type PatientNotification = {
+  notification_id: number;
+  title: string;
+  message: string;
+  type: string;
+  is_read?: boolean;
+  created_at?: string;
+};
+
 type PatientdashboardProps = {
   accessToken?: string;
   onOpenAiDetect?: () => void;
@@ -58,6 +67,8 @@ export default function Patientdashboard({ accessToken, onOpenAiDetect, onOpenNo
   });
 
   const [profileLoadError, setProfileLoadError] = useState<string>('');
+
+  const [ambulanceStatus, setAmbulanceStatus] = useState<PatientNotification | null>(null);
 
   const notificationCount = 3; // UI demo: replace with real notifications count later
 
@@ -262,6 +273,42 @@ export default function Patientdashboard({ accessToken, onOpenAiDetect, onOpenNo
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [accessToken]);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadAmbulanceStatus() {
+      if (!accessToken) return;
+
+      const result = await apiGet<any>('/api/patient/notifications?type=Ambulance&limit=20', accessToken);
+      if (cancelled) return;
+
+      if (!result.ok) {
+        setAmbulanceStatus(null);
+        return;
+      }
+
+      const list: PatientNotification[] = Array.isArray(result.data?.data) ? result.data.data : [];
+      if (!list.length) {
+        setAmbulanceStatus(null);
+        return;
+      }
+
+      const preferred = list.find((n) => String(n.title || '').toLowerCase().includes('accepted'))
+        || list.find((n) => String(n.title || '').toLowerCase().includes('rejected'))
+        || list[0];
+
+      setAmbulanceStatus(preferred);
+    }
+
+    loadAmbulanceStatus();
+    const interval = setInterval(loadAmbulanceStatus, 7000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [accessToken]);
+
   const showReminderToast = (variant: 'success' | 'error' | 'info', message: string) => {
     if (reminderToastTimer.current) {
       clearTimeout(reminderToastTimer.current);
@@ -370,6 +417,35 @@ export default function Patientdashboard({ accessToken, onOpenAiDetect, onOpenNo
                   {language === 'sinhala' ? 'විවෘත කරන්න' : language === 'tamil' ? 'திற' : 'Open'}
                 </Text>
               </TouchableOpacity>
+            </View>
+
+            <View style={[styles.sectionCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <Text style={[styles.sectionTitle, { color: colors.text }]}>
+                {language === 'sinhala'
+                  ? 'ඇම්බියුලන්ස් ඉල්ලීමේ තත්ත්වය'
+                  : language === 'tamil'
+                    ? 'ஆம்புலன்ஸ் கோரிக்கை நிலை'
+                    : 'Ambulance request status'}
+              </Text>
+
+              {!ambulanceStatus ? (
+                <Text style={[styles.cardText, { color: colors.subtext, marginTop: 8 }]}>
+                  {language === 'sinhala'
+                    ? 'දැනට ක්‍රියාකාරී ඉල්ලීමක් නැත.'
+                    : language === 'tamil'
+                      ? 'தற்போது செயலிலுள்ள கோரிக்கை இல்லை.'
+                      : 'No active request yet.'}
+                </Text>
+              ) : (
+                <View style={[styles.itemRow, { borderTopColor: colors.border }]}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.itemTitle, { color: colors.text }]}>{ambulanceStatus.title}</Text>
+                    <Text style={[styles.itemSub, { color: colors.subtext }]} numberOfLines={3}>
+                      {ambulanceStatus.message}
+                    </Text>
+                  </View>
+                </View>
+              )}
             </View>
 
             <View

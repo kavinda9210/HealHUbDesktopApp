@@ -1,4 +1,5 @@
 import logging
+import re
 from datetime import datetime
 from flask import Blueprint, request, jsonify, current_app
 from flask_jwt_extended import jwt_required, get_jwt_identity
@@ -375,14 +376,43 @@ def accept_request(notification_id: int):
             last_updated=sl_now_iso()
         )
         
-        # Try to extract patient info from notification message
-        # This is a simple extraction - in production you'd want a more robust method
-        message = notification['message']
-        
-        # Create a response notification for the patient
-        # Note: We need to know which patient made the request
-        # For now, we'll log it and in production you'd store patient ID in notification
-        
+        # Notify patient (if metadata exists in the message)
+        message = notification.get('message') or ''
+
+        def extract_meta(key: str):
+            m = re.search(rf"{re.escape(key)}=([^\s]+)", message)
+            return m.group(1) if m else None
+
+        patient_user_id = extract_meta('meta_patient_user_id')
+        patient_lat = extract_meta('meta_patient_lat')
+        patient_lng = extract_meta('meta_patient_lng')
+
+        ambulance_result = SupabaseClient.execute_query(
+            'ambulances',
+            'select',
+            filter_ambulance_id=ambulance_id
+        )
+        ambulance = (ambulance_result.get('data') or [{}])[0]
+
+        if patient_user_id:
+            directions = ''
+            if patient_lat and patient_lng:
+                directions = f"Directions: https://www.google.com/maps/dir/?api=1&destination={patient_lat},{patient_lng}"
+
+            SupabaseClient.execute_query(
+                'notifications',
+                'insert',
+                user_id=patient_user_id,
+                title='Ambulance Request Accepted',
+                message=(
+                    f"Ambulance {ambulance.get('ambulance_number', ambulance_id)} accepted your request and is on the way. "
+                    f"Driver: {ambulance.get('driver_name', '')} {ambulance.get('driver_phone', '')}. "
+                    f"{directions}"
+                ).strip(),
+                type='Ambulance',
+                created_at=sl_now_iso()
+            )
+
         logger.info(f"Ambulance {ambulance_id} accepted request: {message}")
         
         return jsonify({
@@ -433,6 +463,26 @@ def reject_request(notification_id: int):
             filter_notification_id=notification_id,
             is_read=True
         )
+
+        # Notify patient (if metadata exists)
+        message = (notification_result['data'][0].get('message') or '') if notification_result.get('data') else ''
+
+        def extract_meta(key: str):
+            m = re.search(rf"{re.escape(key)}=([^\s]+)", message)
+            return m.group(1) if m else None
+
+        patient_user_id = extract_meta('meta_patient_user_id')
+
+        if patient_user_id:
+            SupabaseClient.execute_query(
+                'notifications',
+                'insert',
+                user_id=patient_user_id,
+                title='Ambulance Request Rejected',
+                message='Your ambulance request was rejected. Please try another ambulance.',
+                type='Ambulance',
+                created_at=sl_now_iso()
+            )
         
         return jsonify({
             'success': True,
