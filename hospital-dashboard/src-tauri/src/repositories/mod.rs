@@ -1,9 +1,0 @@
-pub mod appointments_repo;
-pub mod clinic_repo;
-pub mod doctors_repo;
-pub mod history_repo;
-pub mod medications_repo;
-pub mod patients_repo;
-pub mod reports_repo;
-pub mod supabase;
-pub mod users_repo;
