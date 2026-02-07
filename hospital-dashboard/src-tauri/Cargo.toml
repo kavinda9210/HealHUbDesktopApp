@@ -32,3 +32,10 @@ urlencoding = "2"
 lettre = { version = "0.11", default-features = false, features = ["smtp-transport", "tokio1", "tokio1-rustls", "rustls-tls", "builder"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 
+[profile.dev]
+# Workaround for MSVC linker errors like `LNK1318: Unexpected PDB error`.
+# Incremental compilation can leave/lock corrupted PDB state on Windows.
+incremental = false
+# Also disable debug info in dev to avoid generating/merging PDBs via `link.exe`.
+debug = 0
+
