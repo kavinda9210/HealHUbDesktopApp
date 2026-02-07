@@ -41,6 +41,12 @@ def register():
                 'message': 'No data provided'
             }), 400
 
+        import random
+
+        from app.utils.supabase_client import (
+            SupabaseClient, get_user_by_email, get_user_by_id,
+            create_user, update_user
+        )
         # Default role to patient when omitted
         if isinstance(data, dict) and 'role' not in data:
             data['role'] = 'patient'
@@ -424,6 +430,45 @@ def login():
             'message': 'Login failed',
             'error': str(e)
         }), 500
+
+
+@auth_bp.route('/notifications', methods=['GET'])
+@jwt_required()
+def list_my_notifications():
+    """List notifications for the currently authenticated user (any role)."""
+    try:
+        current_user_id = get_jwt_identity()
+
+        notification_type = request.args.get('type')
+        is_read = request.args.get('is_read')
+        limit = int(request.args.get('limit', 50))
+
+        query_params = {
+            'filter_user_id': current_user_id,
+            'limit': limit,
+            'order_by': 'created_at',
+            'order_desc': True,
+        }
+
+        if notification_type:
+            query_params['filter_type'] = notification_type
+
+        if is_read is not None:
+            if isinstance(is_read, str):
+                query_params['filter_is_read'] = is_read.lower() in ['true', '1', 'yes']
+            else:
+                query_params['filter_is_read'] = bool(is_read)
+
+        result = SupabaseClient.execute_query('notifications', 'select', **query_params)
+        if not result.get('success'):
+            return jsonify({'success': False, 'message': 'Failed to fetch notifications'}), 500
+
+        rows = result.get('data') or []
+        return jsonify({'success': True, 'data': rows, 'count': len(rows)}), 200
+
+    except Exception as e:
+        logger.error(f"List my notifications error: {str(e)}")
+        return jsonify({'success': False, 'message': 'Failed to fetch notifications', 'error': str(e)}), 500
 
 @auth_bp.route('/forgot-password', methods=['POST'])
 def forgot_password():

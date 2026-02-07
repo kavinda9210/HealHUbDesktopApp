@@ -170,6 +170,13 @@ def doctor_accept_appointment(appointment_id: int):
         if appt.get('status') in ['Cancelled', 'Completed']:
             return jsonify({'success': False, 'message': f"Appointment already {appt.get('status')}"}), 400
 
+        payload = request.get_json(silent=True) or {}
+        fee_override = payload.get('consultation_fee')
+        try:
+            fee_override = float(fee_override) if fee_override is not None else None
+        except Exception:
+            return jsonify({'success': False, 'message': 'consultation_fee must be a number'}), 400
+
         upd = SupabaseClient.execute_query(
             'appointments',
             'update',
@@ -202,11 +209,26 @@ def doctor_accept_appointment(appointment_id: int):
                     )
                 )
 
-        # Create a bill for channeling fee if not already present
+        # Create (or update) a bill for channeling fee
+        fee = fee_override if fee_override is not None else float(doctor.get('consultation_fee') or 0.0)
+        if fee < 0:
+            return jsonify({'success': False, 'message': 'consultation_fee cannot be negative'}), 400
+
+        bill_created_or_updated = False
         try:
             existing_bill = SupabaseClient.execute_query('billing', 'select', filter_appointment_id=appointment_id)
-            if not (existing_bill.get('success') and existing_bill.get('data')):
-                fee = float(doctor.get('consultation_fee') or 0.0)
+            if existing_bill.get('success') and existing_bill.get('data'):
+                bill = existing_bill['data'][0]
+                # If doctor provided a fee override, update pending bill amount
+                if fee_override is not None and str(bill.get('payment_status')) != 'Paid':
+                    SupabaseClient.execute_query(
+                        'billing',
+                        'update',
+                        filter_bill_id=bill.get('bill_id'),
+                        total_amount=fee,
+                    )
+                    bill_created_or_updated = True
+            else:
                 SupabaseClient.execute_query(
                     'billing',
                     'insert',
@@ -219,10 +241,38 @@ def doctor_accept_appointment(appointment_id: int):
                     bill_date=appt['appointment_date'],
                     created_at=sl_now_iso(),
                 )
+                bill_created_or_updated = True
         except Exception:
-            pass
+            bill_created_or_updated = False
 
-        return jsonify({'success': True, 'message': 'Appointment accepted'}), 200
+        # Notify patient about billing (so they can pay)
+        if patient and bill_created_or_updated:
+            _notify(
+                patient['user_id'],
+                'Doctor Charge Added',
+                f"Doctor charge added for your appointment: LKR {fee:.2f}. Please pay from the Payments/Bills section.",
+                'Billing'
+            )
+
+            patient_email = _get_user_email(patient['user_id'])
+            if patient_email:
+                EmailService.send_async_email(
+                    to_email=patient_email,
+                    subject='Doctor Charge Added',
+                    html_content=(
+                        f"<h2>Doctor Charge Added</h2>"
+                        f"<p>A doctor charge has been added for your appointment.</p>"
+                        f"<ul>"
+                        f"<li>Date: {appt['appointment_date']}</li>"
+                        f"<li>Time: {appt['appointment_time']}</li>"
+                        f"<li>Doctor: {doctor.get('full_name','')}</li>"
+                        f"<li>Charge: LKR {fee:.2f}</li>"
+                        f"</ul>"
+                        f"<p>Please pay from your Bills/Payments section.</p>"
+                    )
+                )
+
+        return jsonify({'success': True, 'message': 'Appointment accepted', 'consultation_fee': fee}), 200
 
     except Exception as e:
         logger.error(f"Doctor accept appointment error: {e}")

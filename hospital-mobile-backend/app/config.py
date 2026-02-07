@@ -17,7 +17,20 @@ class Config:
     JWT_HEADER_TYPE = 'Bearer'
     
     # CORS Configuration
-    CORS_ORIGINS = os.environ.get('CORS_ORIGINS', 'http://localhost:3000,http://localhost:8081').split(',')
+    # Default origins cover local web dev (React/Vue/Expo) and Tauri desktop apps.
+    _default_cors_origins = (
+        'http://localhost:3000,'
+        'http://localhost:8081,'
+        'http://localhost:5173,'
+        'tauri://localhost,'
+        'http://tauri.localhost,'
+        'https://tauri.localhost'
+    )
+    CORS_ORIGINS = [
+        o.strip()
+        for o in os.environ.get('CORS_ORIGINS', _default_cors_origins).split(',')
+        if o.strip()
+    ]
     
     # Email Configuration
     MAIL_SERVER = os.environ.get('MAIL_SERVER', 'smtp.gmail.com')

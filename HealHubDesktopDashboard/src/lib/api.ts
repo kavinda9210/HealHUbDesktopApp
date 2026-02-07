@@ -1,0 +1,79 @@
+type ApiSuccess<T> = { success: true } & T
+type ApiFailure = { success: false; message?: string; error?: unknown }
+
+export type ApiResult<T> = ApiSuccess<T> | ApiFailure
+
+function getBaseUrl(): string {
+  const fromEnv = import.meta.env.VITE_API_BASE_URL
+  if (typeof fromEnv === 'string' && fromEnv.trim()) return fromEnv.trim().replace(/\/$/, '')
+  return 'http://127.0.0.1:5000'
+}
+
+export class ApiError extends Error {
+  status: number
+  payload: unknown
+
+  constructor(message: string, status: number, payload: unknown) {
+    super(message)
+    this.name = 'ApiError'
+    this.status = status
+    this.payload = payload
+  }
+}
+
+async function request<T>(
+  method: 'GET' | 'POST' | 'PUT' | 'DELETE',
+  path: string,
+  options?: { token?: string | null; body?: unknown; query?: Record<string, string | number | boolean | undefined> },
+): Promise<T> {
+  const baseUrl = getBaseUrl()
+
+  const url = new URL(path.startsWith('http') ? path : `${baseUrl}${path}`)
+  if (options?.query) {
+    for (const [key, value] of Object.entries(options.query)) {
+      if (value === undefined) continue
+      url.searchParams.set(key, String(value))
+    }
+  }
+
+  const headers: Record<string, string> = {
+    Accept: 'application/json',
+  }
+  if (options?.token) headers.Authorization = `Bearer ${options.token}`
+  if (options?.body !== undefined) headers['Content-Type'] = 'application/json'
+
+  const res = await fetch(url.toString(), {
+    method,
+    headers,
+    body: options?.body !== undefined ? JSON.stringify(options.body) : undefined,
+  })
+
+  const contentType = res.headers.get('content-type') || ''
+  const isJson = contentType.includes('application/json')
+  const payload = isJson ? await res.json().catch(() => null) : await res.text().catch(() => null)
+
+  if (!res.ok) {
+    const message =
+      (payload && typeof payload === 'object' && 'message' in payload && typeof (payload as any).message === 'string')
+        ? (payload as any).message
+        : `Request failed (${res.status})`
+    throw new ApiError(message, res.status, payload)
+  }
+
+  return payload as T
+}
+
+export const api = {
+  get<T>(path: string, opts?: Parameters<typeof request<T>>[2]) {
+    return request<T>('GET', path, opts)
+  },
+  post<T>(path: string, body?: unknown, opts?: Omit<Parameters<typeof request<T>>[2], 'body'>) {
+    return request<T>('POST', path, { ...opts, body })
+  },
+  put<T>(path: string, body?: unknown, opts?: Omit<Parameters<typeof request<T>>[2], 'body'>) {
+    return request<T>('PUT', path, { ...opts, body })
+  },
+  del<T>(path: string, opts?: Parameters<typeof request<T>>[2]) {
+    return request<T>('DELETE', path, opts)
+  },
+}
