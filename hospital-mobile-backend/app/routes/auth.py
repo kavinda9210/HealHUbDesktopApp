@@ -9,7 +9,7 @@ from flask_jwt_extended import (
     get_jwt_identity,
     get_jwt
 )
-import hashlib
+import random
 
 from app.models.user_models import (
     UserCreate, UserLogin, UserResponse, 
@@ -27,10 +27,7 @@ logger = logging.getLogger(__name__)
 
 auth_bp = Blueprint('auth', __name__)
 
-# Helper function to hash password
-def hash_password(password: str) -> str:
-    """Hash password using SHA-256"""
-    return hashlib.sha256(password.encode()).hexdigest()
+from app.utils.security import hash_password
 
 @auth_bp.route('/register', methods=['POST'])
 def register():
@@ -737,3 +734,127 @@ def logout():
             'success': False,
             'message': 'Logout failed'
         }), 500
+
+
+@auth_bp.route('/change-email/request', methods=['POST'])
+@jwt_required()
+def request_email_change():
+    """Request an email change (sends a verification code to the new email)."""
+    try:
+        current_user_id = get_jwt_identity()
+        data = request.get_json() or {}
+        new_email = (data.get('new_email') or '').strip().lower()
+
+        if not new_email:
+            return jsonify({'success': False, 'message': 'new_email is required'}), 400
+
+        # Ensure new email isn't already taken.
+        existing = get_user_by_email(new_email)
+        if existing:
+            return jsonify({'success': False, 'message': 'Email already in use'}), 409
+
+        # Generate code and store it.
+        verification_code = str(random.randint(100000, 999999))
+        ttl_seconds = int(current_app.config.get('PASSWORD_RESET_TIMEOUT', 900))
+        expires_at = (sl_now() + timedelta(seconds=ttl_seconds)).isoformat(timespec='seconds')
+
+        ins = SupabaseClient.execute_query(
+            'verification_codes',
+            'insert',
+            user_id=current_user_id,
+            email=new_email,
+            verification_code=verification_code,
+            verification_type='email_change',
+            verification_method='email',
+            expires_at=expires_at,
+            is_used=False,
+            created_at=sl_now_iso(),
+        )
+
+        if not ins.get('success'):
+            return jsonify({'success': False, 'message': 'Failed to create verification code'}), 500
+
+        email_sent = EmailService.send_verification_code(
+            email=new_email,
+            verification_code=verification_code,
+            user_name=None,
+        )
+
+        return jsonify({
+            'success': True,
+            'message': 'Verification code sent to new email',
+            'email_sent': email_sent,
+            'expires_in_seconds': ttl_seconds,
+        }), 200
+
+    except Exception as e:
+        logger.error(f"Request email change error: {str(e)}")
+        return jsonify({'success': False, 'message': 'Failed to request email change', 'error': str(e)}), 500
+
+
+@auth_bp.route('/change-email/verify', methods=['POST'])
+@jwt_required()
+def verify_email_change():
+    """Verify an email change using code and update the user's email."""
+    try:
+        current_user_id = get_jwt_identity()
+        data = request.get_json() or {}
+        new_email = (data.get('new_email') or '').strip().lower()
+        verification_code = (data.get('verification_code') or '').strip()
+
+        if not new_email or not verification_code:
+            return jsonify({'success': False, 'message': 'new_email and verification_code are required'}), 400
+
+        # Ensure new email isn't already taken.
+        existing = get_user_by_email(new_email)
+        if existing:
+            return jsonify({'success': False, 'message': 'Email already in use'}), 409
+
+        client = SupabaseClient.get_client()
+        query = (
+            client.table('verification_codes')
+            .select('*')
+            .eq('user_id', current_user_id)
+            .eq('email', new_email)
+            .eq('verification_code', verification_code)
+            .eq('verification_type', 'email_change')
+        )
+        try:
+            query = query.eq('is_used', False)
+        except Exception:
+            pass
+
+        vc_result = query.execute()
+        rows = getattr(vc_result, 'data', None) or []
+        if not rows:
+            return jsonify({'success': False, 'message': 'Invalid verification code'}), 400
+
+        vc = rows[0]
+        expires_at = vc.get('expires_at')
+        if expires_at and parse_iso_datetime(expires_at) < utc_now():
+            return jsonify({'success': False, 'message': 'Verification code has expired'}), 400
+
+        upd = SupabaseClient.execute_query(
+            'users',
+            'update',
+            filter_user_id=current_user_id,
+            email=new_email,
+        )
+        if not upd.get('success'):
+            return jsonify({'success': False, 'message': 'Failed to update email'}), 500
+
+        try:
+            SupabaseClient.execute_query(
+                'verification_codes',
+                'update',
+                filter_verification_id=vc.get('verification_id'),
+                is_used=True,
+            )
+        except Exception:
+            pass
+
+        return jsonify({'success': True, 'message': 'Email updated successfully', 'new_email': new_email}), 200
+
+    except Exception as e:
+        logger.error(f"Verify email change error: {str(e)}")
+        return jsonify({'success': False, 'message': 'Failed to verify email change', 'error': str(e)}), 500

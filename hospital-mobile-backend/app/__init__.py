@@ -44,6 +44,8 @@ def create_app(config_name='default'):
     from .routes.appointment import appointment_bp
     from .routes.medication import medication_bp
     from .routes.payment import payment_bp
+    from .routes.admin import admin_bp
+    from .routes.doctor import doctor_bp
     from .routes.skin_disease import skin_disease_bp
 
     
@@ -53,6 +55,8 @@ def create_app(config_name='default'):
     app.register_blueprint(appointment_bp, url_prefix='/api/appointment')
     app.register_blueprint(medication_bp, url_prefix='/api/medication')
     app.register_blueprint(payment_bp, url_prefix='/api/payment')
+    app.register_blueprint(admin_bp, url_prefix='/api/admin')
+    app.register_blueprint(doctor_bp, url_prefix='/api/doctor')
     app.register_blueprint(skin_disease_bp, url_prefix='/api/skin-disease')
 
     

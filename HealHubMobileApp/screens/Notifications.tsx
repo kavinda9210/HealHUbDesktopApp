@@ -1,15 +1,26 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { View, Text, StyleSheet, StatusBar, TouchableOpacity, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLanguage } from '../context/LanguageContext';
 import NotificationList, { NotificationItem } from '../components/notifications/NotificationList';
 import { useTheme } from '../context/ThemeContext';
+import { apiGet } from '../utils/api';
+
+type PatientNotification = {
+  notification_id: number;
+  title: string;
+  message: string;
+  type: string;
+  is_read?: boolean;
+  created_at?: string;
+};
 
 type NotificationsProps = {
+  accessToken?: string;
   onBack?: () => void;
 };
 
-export default function Notifications({ onBack }: NotificationsProps) {
+export default function Notifications({ accessToken, onBack }: NotificationsProps) {
   const { language } = useLanguage();
   const { colors, mode } = useTheme();
 
@@ -19,47 +30,46 @@ export default function Notifications({ onBack }: NotificationsProps) {
     return 'Notifications';
   }, [language]);
 
-  const [notifications, setNotifications] = useState<NotificationItem[]>(() => {
-    // UI demo: “get all notifications” (replace with API later)
-    return [
-      {
-        id: 'n1',
-        title: language === 'sinhala' ? 'ඖෂධ මතක් කිරීම' : language === 'tamil' ? 'மருந்து நினைவூட்டல்' : 'Medicine reminder',
-        message:
-          language === 'sinhala'
-            ? 'පැරසිටමෝල් ලබා ගැනීමට 2:00 PM'
-            : language === 'tamil'
-              ? 'பாராசிட்டமோல் 2:00 PM'
-              : 'Paracetamol due at 2:00 PM',
-        time: language === 'sinhala' ? 'මිනිත්තු 10කට පෙර' : language === 'tamil' ? '10 நிமிடம் முன்' : '10 min ago',
-        read: false,
-      },
-      {
-        id: 'n2',
-        title: language === 'sinhala' ? 'වෙන්කිරීම තහවුරු විය' : language === 'tamil' ? 'நியமனம் உறுதியாகியது' : 'Appointment confirmed',
-        message:
-          language === 'sinhala'
-            ? 'Dr. Jayasinghe සමඟ අද 10:30 AM'
-            : language === 'tamil'
-              ? 'Dr. Jayasinghe இன்று 10:30 AM'
-              : 'With Dr. Jayasinghe at 10:30 AM',
-        time: language === 'sinhala' ? 'පැය 2කට පෙර' : language === 'tamil' ? '2 மணி முன்' : '2 hours ago',
-        read: true,
-      },
-      {
-        id: 'n3',
-        title: language === 'sinhala' ? 'AI පරීක්ෂාව' : language === 'tamil' ? 'AI பரிசோதனை' : 'AI check',
-        message:
-          language === 'sinhala'
-            ? 'රෑෂ්/තුවාල පරීක්ෂාව සඳහා පැහැදිලි ඡායාරූපයක් ලබාගන්න.'
-            : language === 'tamil'
-              ? 'ரேஷ்/காயம் பரிசோதனைக்கு தெளிவான படம் எடுக்கவும்.'
-              : 'For rash/wound checks, take a clear photo.',
-        time: language === 'sinhala' ? 'ඊයේ' : language === 'tamil' ? 'நேற்று' : 'Yesterday',
-        read: false,
-      },
-    ];
-  });
+  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  const [loadError, setLoadError] = useState<string>('');
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadNotifications() {
+      if (!accessToken) return;
+      setLoadError('');
+
+      const res = await apiGet<any>('/api/patient/notifications?limit=100', accessToken);
+      if (cancelled) return;
+
+      if (!res.ok || !res.data?.success) {
+        const msg = (res.data && (res.data.message || res.data.error)) || 'Failed to load notifications';
+        setLoadError(String(msg));
+        return;
+      }
+
+      const rows: PatientNotification[] = Array.isArray(res.data?.data) ? res.data.data : [];
+      const mapped: NotificationItem[] = rows.map((n) => {
+        const created = String(n.created_at ?? '');
+        const timeLabel = created ? created.replace('T', ' ').slice(0, 16) : '';
+        return {
+          id: String(n.notification_id),
+          title: String(n.title ?? ''),
+          message: String(n.message ?? ''),
+          time: timeLabel,
+          read: Boolean(n.is_read),
+        };
+      });
+
+      setNotifications(mapped);
+    }
+
+    loadNotifications();
+    return () => {
+      cancelled = true;
+    };
+  }, [accessToken]);
 
   const unreadCount = useMemo(() => notifications.filter((n) => !n.read).length, [notifications]);
 
@@ -92,6 +102,9 @@ export default function Notifications({ onBack }: NotificationsProps) {
         contentContainerStyle={{ paddingBottom: 20 }}
         showsVerticalScrollIndicator={false}
       >
+        {!!loadError && (
+          <Text style={[styles.subtitle, { color: colors.danger, marginTop: 0, marginBottom: 12 }]}>{loadError}</Text>
+        )}
         <NotificationList
           notifications={notifications}
           onPressItem={(id) => {

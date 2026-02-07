@@ -210,13 +210,26 @@ def update_availability():
                 'success': False,
                 'message': 'Failed to update availability'
             }), 500
+
+        cleared = 0
+        if is_available:
+            # Remove previous ambulance requests from DB for this ambulance user
+            clear_result = SupabaseClient.execute_query(
+                'notifications',
+                'delete',
+                filter_user_id=current_user_id,
+                filter_type='Ambulance'
+            )
+            if clear_result.get('success'):
+                cleared = int(clear_result.get('count') or 0)
         
         status_text = "available" if is_available else "unavailable"
         
         return jsonify({
             'success': True,
             'message': f'Ambulance marked as {status_text}',
-            'is_available': is_available
+            'is_available': is_available,
+            'cleared_requests': cleared
         }), 200
         
     except Exception as e:
@@ -358,13 +371,14 @@ def accept_request(notification_id: int):
             }), 404
         
         notification = notification_result['data'][0]
-        
-        # Mark notification as read
+
+        # Remove request notification from DB once handled
         SupabaseClient.execute_query(
             'notifications',
-            'update',
+            'delete',
             filter_notification_id=notification_id,
-            is_read=True
+            filter_user_id=current_user_id,
+            filter_type='Ambulance'
         )
         
         # Update ambulance as unavailable when accepting request
@@ -455,13 +469,14 @@ def reject_request(notification_id: int):
                 'success': False,
                 'message': 'Request not found'
             }), 404
-        
-        # Mark notification as read
+
+        # Remove request notification from DB once handled
         SupabaseClient.execute_query(
             'notifications',
-            'update',
+            'delete',
             filter_notification_id=notification_id,
-            is_read=True
+            filter_user_id=current_user_id,
+            filter_type='Ambulance'
         )
 
         # Notify patient (if metadata exists)

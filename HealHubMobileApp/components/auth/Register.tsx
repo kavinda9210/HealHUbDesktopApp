@@ -9,6 +9,7 @@ import {
   Platform,
   ScrollView,
 } from 'react-native';
+import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLanguage } from '../../context/LanguageContext';
 import { apiPost } from '../../utils/api';
@@ -33,6 +34,8 @@ export default function Register({ onRegistered, onBack }: RegisterProps) {
 
   const [phone, setPhone] = useState('');
   const [dob, setDob] = useState(''); // YYYY-MM-DD
+  const [dobDateValue, setDobDateValue] = useState<Date | null>(null);
+  const [showDobPicker, setShowDobPicker] = useState(false);
   const [gender, setGender] = useState<GenderValue | ''>('');
   const [address, setAddress] = useState('');
   const [emergencyContact, setEmergencyContact] = useState('');
@@ -175,6 +178,20 @@ export default function Register({ onRegistered, onBack }: RegisterProps) {
 
     return '';
   }
+
+  function formatDobDate(d: Date) {
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  }
+
+  const onDobChange = (_event: DateTimePickerEvent, date?: Date) => {
+    if (Platform.OS !== 'ios') setShowDobPicker(false);
+    if (!date) return;
+    setDobDateValue(date);
+    setDob(formatDobDate(date));
+  };
 
   async function submitRegistration() {
     const stepError = validateStep(3);
@@ -331,17 +348,30 @@ export default function Register({ onRegistered, onBack }: RegisterProps) {
                   />
 
                   <Text style={[styles.label, { marginTop: 14 }]}>{dobLabel}</Text>
-                  <TextInput
-                    value={dob}
-                    onChangeText={setDob}
-                    placeholder="2000-01-31"
-                    keyboardType="numbers-and-punctuation"
-                    autoCapitalize="none"
-                    autoCorrect={false}
+                  <TouchableOpacity
+                    activeOpacity={0.85}
+                    onPress={() => {
+                      setShowDobPicker(true);
+                      setErrorMessage('');
+                    }}
                     style={styles.input}
-                    placeholderTextColor="#9aa4b2"
-                    returnKeyType="next"
-                  />
+                  >
+                    <Text style={{ color: dob ? '#111827' : '#9aa4b2', fontWeight: '700' }}>
+                      📅 {dob || '2000-01-31'}
+                    </Text>
+                  </TouchableOpacity>
+
+                  {showDobPicker && (
+                    <View style={{ marginTop: 8 }}>
+                      <DateTimePicker
+                        value={dobDateValue ?? new Date(2000, 0, 1)}
+                        mode="date"
+                        onChange={onDobChange}
+                        maximumDate={new Date()}
+                        display={Platform.OS === 'ios' ? 'inline' : 'default'}
+                      />
+                    </View>
+                  )}
 
                   <Text style={[styles.label, { marginTop: 14 }]}>{genderLabel}</Text>
                   <View style={styles.genderRow}>

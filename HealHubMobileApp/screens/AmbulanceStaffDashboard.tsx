@@ -168,6 +168,7 @@ export default function AmbulanceStaffDashboard({ accessToken, onBack, onLogout 
     }
 
     await fetchStatus();
+    await fetchRequests();
     await setLastAvailability(isAvailable);
   };
 

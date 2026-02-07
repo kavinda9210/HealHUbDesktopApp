@@ -273,7 +273,7 @@ function ForceNativeSplashApp() {
   }
 
   if (screen === 'notifications') {
-    return <Notifications onBack={() => setScreen('patient-dashboard')} />;
+    return <Notifications accessToken={accessToken} onBack={() => setScreen('patient-dashboard')} />;
   }
 
   if (screen === 'nearby-ambulance') {

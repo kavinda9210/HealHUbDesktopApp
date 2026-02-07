@@ -67,6 +67,32 @@ def get_patient_notifications():
             'error': str(e)
         }), 500
 
+
+@patient_bp.route('/notifications/clear', methods=['POST'])
+@jwt_required()
+def clear_patient_notifications():
+    """Delete notifications for the current user (optionally by type)."""
+    try:
+        current_user_id = get_jwt_identity()
+        data = request.get_json(silent=True) or {}
+        notification_type = data.get('type')
+
+        query_params = {
+            'filter_user_id': current_user_id,
+        }
+        if notification_type:
+            query_params['filter_type'] = notification_type
+
+        result = SupabaseClient.execute_query('notifications', 'delete', **query_params)
+        if not result.get('success'):
+            return jsonify({'success': False, 'message': 'Failed to clear notifications'}), 500
+
+        return jsonify({'success': True, 'cleared': int(result.get('count') or 0)}), 200
+
+    except Exception as e:
+        logger.error(f"Clear patient notifications error: {str(e)}")
+        return jsonify({'success': False, 'message': 'Failed to clear notifications', 'error': str(e)}), 500
+
 # Helper function to get patient ID from user ID
 def get_patient_id(user_id: str):
     """Get patient ID from user ID"""

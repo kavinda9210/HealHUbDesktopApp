@@ -55,7 +55,13 @@ class SupabaseClient:
             
             # Execute operation
             if operation == 'select':
-                query = table_ref.select('*')
+                columns = kwargs.pop('columns', kwargs.pop('select', '*'))
+                limit = kwargs.pop('limit', None)
+                offset = kwargs.pop('offset', None)
+                order_by = kwargs.pop('order_by', None)
+                order_desc = bool(kwargs.pop('order_desc', False))
+
+                query = table_ref.select(columns)
                 
                 # Apply filters
                 for key, value in kwargs.items():
@@ -63,14 +69,28 @@ class SupabaseClient:
                         column = key[7:]  # Remove 'filter_' prefix
                         if isinstance(value, tuple) and len(value) == 2:
                             operator, filter_value = value
-                            query = query.filter(column, operator, filter_value)
+                            op = str(operator).lower()
+                            if op == 'in' and isinstance(filter_value, (list, tuple)):
+                                query = query.in_(column, list(filter_value))
+                            else:
+                                query = query.filter(column, operator, filter_value)
                         else:
                             query = query.eq(column, value)
+
+                if order_by:
+                    query = query.order(order_by, desc=order_desc)
+
+                if offset is not None:
+                    query = query.range(int(offset), int(offset) + int(limit or 1000) - 1)
+                elif limit is not None:
+                    query = query.limit(int(limit))
                 
                 result = query.execute()
                 
             elif operation == 'insert':
-                result = table_ref.insert(kwargs).execute()
+                rows = kwargs.pop('rows', None)
+                payload = rows if rows is not None else kwargs
+                result = table_ref.insert(payload).execute()
                 
             elif operation == 'update':
                 # Separate filters from update data
@@ -115,6 +135,79 @@ class SupabaseClient:
                 'error': str(e),
                 'data': None
             }
+
+    @classmethod
+    def execute_admin_query(cls, table: str, operation: str = 'select', **kwargs) -> Dict[str, Any]:
+        """Execute a query using the service-role key (bypasses RLS when configured)."""
+        try:
+            client = cls.get_service_client()
+        except Exception:
+            # Fall back to normal client if service key isn't configured.
+            client = cls.get_client()
+
+        try:
+            table_ref = client.table(table)
+
+            if operation == 'select':
+                columns = kwargs.pop('columns', kwargs.pop('select', '*'))
+                limit = kwargs.pop('limit', None)
+                order_by = kwargs.pop('order_by', None)
+                order_desc = bool(kwargs.pop('order_desc', False))
+
+                query = table_ref.select(columns)
+                for key, value in kwargs.items():
+                    if key.startswith('filter_'):
+                        column = key[7:]
+                        if isinstance(value, tuple) and len(value) == 2:
+                            operator, filter_value = value
+                            op = str(operator).lower()
+                            if op == 'in' and isinstance(filter_value, (list, tuple)):
+                                query = query.in_(column, list(filter_value))
+                            else:
+                                query = query.filter(column, operator, filter_value)
+                        else:
+                            query = query.eq(column, value)
+
+                if order_by:
+                    query = query.order(order_by, desc=order_desc)
+                if limit is not None:
+                    query = query.limit(int(limit))
+                result = query.execute()
+
+            elif operation == 'insert':
+                rows = kwargs.pop('rows', None)
+                payload = rows if rows is not None else kwargs
+                result = table_ref.insert(payload).execute()
+
+            elif operation == 'update':
+                filters = {k[7:]: v for k, v in kwargs.items() if k.startswith('filter_')}
+                update_data = {k: v for k, v in kwargs.items() if not k.startswith('filter_')}
+                query = table_ref.update(update_data)
+                for column, value in filters.items():
+                    query = query.eq(column, value)
+                result = query.execute()
+
+            elif operation == 'delete':
+                query = table_ref.delete()
+                for key, value in kwargs.items():
+                    if key.startswith('filter_'):
+                        column = key[7:]
+                        query = query.eq(column, value)
+                result = query.execute()
+            else:
+                raise ValueError(f"Unsupported operation: {operation}")
+
+            if hasattr(result, 'data'):
+                return {
+                    'success': True,
+                    'data': result.data,
+                    'count': len(result.data) if result.data else 0
+                }
+            return {'success': True, 'data': result}
+
+        except Exception as e:
+            logger.error(f"Supabase admin query failed: {str(e)}")
+            return {'success': False, 'error': str(e), 'data': None}
     
     @classmethod
     def rpc(cls, function_name: str, params: Dict[str, Any]) -> Dict[str, Any]:

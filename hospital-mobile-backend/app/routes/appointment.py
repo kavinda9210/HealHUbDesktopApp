@@ -3,6 +3,7 @@ import uuid
 from datetime import datetime
 from flask import Blueprint, request, jsonify, current_app
 from flask_jwt_extended import jwt_required, get_jwt_identity
+from datetime import timedelta
 
 from app.models.medical_models import (
     BillingResponse, PaymentCreate, PaymentStatus
@@ -24,6 +25,91 @@ def appointment_ping():
         'success': True,
         'message': 'Appointment routes are not implemented yet'
     }), 200
+
+
+@appointment_bp.route('/doctors', methods=['GET'])
+def list_doctors():
+    """List available doctors (for appointment booking UIs)."""
+    try:
+        specialization = request.args.get('specialization')
+        q = (request.args.get('q') or '').strip()
+
+        query = {
+            'filter_is_available': True,
+            'order_by': 'created_at',
+            'order_desc': True,
+        }
+        if specialization:
+            query['filter_specialization'] = specialization
+        if q:
+            query['filter_full_name'] = ('ilike', f'%{q}%')
+
+        result = SupabaseClient.execute_query('doctors', 'select', **query)
+        if not result.get('success'):
+            return jsonify({'success': False, 'message': 'Failed to fetch doctors'}), 500
+
+        return jsonify({'success': True, 'data': result.get('data') or [], 'count': len(result.get('data') or [])}), 200
+    except Exception as e:
+        logger.error(f"List doctors error: {e}")
+        return jsonify({'success': False, 'message': 'Failed to fetch doctors', 'error': str(e)}), 500
+
+
+@appointment_bp.route('/doctors/<int:doctor_id>/availability', methods=['GET'])
+def doctor_availability(doctor_id: int):
+    """Return available time slots for a doctor on a given date.
+
+    Query params:
+    - date=YYYY-MM-DD (required)
+    - slot_minutes (optional, default 30)
+    """
+    try:
+        date_str = request.args.get('date')
+        if not date_str:
+            return jsonify({'success': False, 'message': 'date is required (YYYY-MM-DD)'}), 400
+
+        slot_minutes = int(request.args.get('slot_minutes', 30))
+        if slot_minutes <= 0 or slot_minutes > 240:
+            return jsonify({'success': False, 'message': 'slot_minutes must be between 1 and 240'}), 400
+
+        doctor_result = SupabaseClient.execute_query('doctors', 'select', filter_doctor_id=doctor_id)
+        if not doctor_result.get('success') or not doctor_result.get('data'):
+            return jsonify({'success': False, 'message': 'Doctor not found'}), 404
+        doctor = doctor_result['data'][0]
+
+        start_time = doctor.get('start_time')
+        end_time = doctor.get('end_time')
+        if not start_time or not end_time:
+            return jsonify({'success': True, 'data': [], 'count': 0, 'message': 'Doctor has no working hours configured'}), 200
+
+        # Build all slots
+        start_dt = datetime.fromisoformat(f"{date_str}T{start_time}")
+        end_dt = datetime.fromisoformat(f"{date_str}T{end_time}")
+        if end_dt <= start_dt:
+            return jsonify({'success': True, 'data': [], 'count': 0}), 200
+
+        slots = []
+        cursor = start_dt
+        while cursor + timedelta(minutes=slot_minutes) <= end_dt:
+            slots.append(cursor.strftime('%H:%M'))
+            cursor += timedelta(minutes=slot_minutes)
+
+        # Remove already booked times
+        booked = SupabaseClient.execute_query(
+            'appointments',
+            'select',
+            filter_doctor_id=doctor_id,
+            filter_appointment_date=date_str,
+            filter_status=('in', ['Scheduled', 'Confirmed']),
+            columns='appointment_time'
+        )
+        booked_times = {r.get('appointment_time') for r in (booked.get('data') or [])}
+        available = [s for s in slots if s not in booked_times]
+
+        return jsonify({'success': True, 'data': available, 'count': len(available)}), 200
+
+    except Exception as e:
+        logger.error(f"Doctor availability error: {e}")
+        return jsonify({'success': False, 'message': 'Failed to get availability', 'error': str(e)}), 500
 
 # Helper functions
 def get_patient_id_from_user(user_id: str):

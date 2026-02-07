@@ -14,7 +14,7 @@ import EmailChangeVerificationCard from '../components/patient/profile/EmailChan
 import DeleteAccountCard from '../components/patient/profile/DeleteAccountCard';
 import LanguagePickerInline from '../components/settings/LanguagePickerInline';
 import ThemeToggleCard from '../components/settings/ThemeToggleCard';
-import { apiGet } from '../utils/api';
+import { apiGet, apiPost } from '../utils/api';
 
 type PatientNotification = {
   notification_id: number;
@@ -23,6 +23,63 @@ type PatientNotification = {
   type: string;
   is_read?: boolean;
   created_at?: string;
+};
+
+type DoctorRow = {
+  doctor_id: number;
+  full_name: string;
+  specialization: string;
+  consultation_fee?: number;
+  is_available?: boolean;
+  start_time?: string | null;
+  end_time?: string | null;
+};
+
+type AppointmentRow = {
+  appointment_id: number;
+  patient_id: number;
+  doctor_id: number;
+  appointment_date: string;
+  appointment_time: string;
+  status: string;
+  symptoms?: string | null;
+  notes?: string | null;
+  booked_at?: string;
+};
+
+type ClinicRow = {
+  clinic_id: number;
+  patient_id: number;
+  doctor_id: number;
+  clinic_date: string;
+  start_time: string;
+  end_time?: string | null;
+  status: string;
+  notes?: string | null;
+};
+
+type MedicationRow = {
+  medication_id: number;
+  patient_id: number;
+  doctor_id: number;
+  medicine_name: string;
+  dosage: string;
+  frequency: string;
+  times_per_day: number;
+  specific_times?: any;
+  start_date: string;
+  end_date?: string | null;
+  next_clinic_date?: string | null;
+  is_active?: boolean;
+};
+
+type MedicineReminderRow = {
+  reminder_id: number;
+  patient_id: number;
+  medication_id: number;
+  reminder_date: string;
+  reminder_time: string;
+  status: string;
 };
 
 type PatientdashboardProps = {
@@ -43,16 +100,19 @@ export default function Patientdashboard({ accessToken, onOpenAiDetect, onOpenNo
   const [reminderToastVariant, setReminderToastVariant] = useState<'success' | 'error' | 'info'>('success');
   const [reminderToastMessage, setReminderToastMessage] = useState('');
 
-  const [selectedDoctor, setSelectedDoctor] = useState<string>('');
+  const [doctorQuerySpecialty, setDoctorQuerySpecialty] = useState<string>('');
+  const [doctorQueryName, setDoctorQueryName] = useState<string>('');
+  const [doctors, setDoctors] = useState<DoctorRow[]>([]);
+  const [doctorById, setDoctorById] = useState<Record<number, DoctorRow>>({});
+  const [doctorLoadError, setDoctorLoadError] = useState<string>('');
+  const [selectedDoctor, setSelectedDoctor] = useState<DoctorRow | null>(null);
   const [appointmentDate, setAppointmentDate] = useState<Date | null>(null);
   const [appointmentTime, setAppointmentTime] = useState<Date | null>(null);
   const [appointmentReason, setAppointmentReason] = useState<string>('');
   const [appointmentError, setAppointmentError] = useState<string>('');
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showTimePicker, setShowTimePicker] = useState(false);
-  const [appointments, setAppointments] = useState<
-    Array<{ id: string; doctor: string; date: string; time: string; reason: string; status: 'pending' | 'confirmed' }>
-  >([]);
+  const [appointments, setAppointments] = useState<AppointmentRow[]>([]);
 
   const [profileView, setProfileView] = useState<'view' | 'edit' | 'verify-email'>('view');
   const [pendingEmail, setPendingEmail] = useState<string>('');
@@ -70,7 +130,13 @@ export default function Patientdashboard({ accessToken, onOpenAiDetect, onOpenNo
 
   const [ambulanceStatus, setAmbulanceStatus] = useState<PatientNotification | null>(null);
 
-  const notificationCount = 3; // UI demo: replace with real notifications count later
+  const [notificationCount, setNotificationCount] = useState<number>(0);
+
+  const [homeMedicines, setHomeMedicines] = useState<Array<{ id: string; name: string; time: string; note: string }>>([]);
+  const [homeClinics, setHomeClinics] = useState<Array<{ id: string; title: string; when: string; where: string }>>([]);
+  const [homeRecentAppointments, setHomeRecentAppointments] = useState<
+    Array<{ id: string; doctor: string; date: string; time: string; status: string }>
+  >([]);
 
   const title = useMemo(() => {
     if (language === 'sinhala') return 'රෝගී පුවරුව';
@@ -89,73 +155,12 @@ export default function Patientdashboard({ accessToken, onOpenAiDetect, onOpenNo
   }, [activeTab, language]);
 
   const homeSections = useMemo(() => {
-    const medicines = [
-      {
-        id: 'm1',
-        name: language === 'sinhala' ? 'පැරසිටමෝල්' : language === 'tamil' ? 'பாராசிட்டமோல்' : 'Paracetamol',
-        time: '2:00 PM',
-        note: language === 'sinhala' ? '1 ටැබ්ලට්' : language === 'tamil' ? '1 மாத்திரை' : '1 tablet',
-      },
-      {
-        id: 'm2',
-        name: language === 'sinhala' ? 'විටමින් C' : language === 'tamil' ? 'விட்டமின் C' : 'Vitamin C',
-        time: '8:00 PM',
-        note: language === 'sinhala' ? '1 ටැබ්ලට්' : language === 'tamil' ? '1 மாத்திரை' : '1 tablet',
-      },
-    ];
-
-    const clinics = [
-      {
-        id: 'c1',
-        title:
-          language === 'sinhala'
-            ? 'ඩර්මටෝලජි ක්ලිනික්'
-            : language === 'tamil'
-              ? 'டர்மடாலஜி கிளினிக்'
-              : 'Dermatology Clinic',
-        when: 'Mon • 10:30 AM',
-        where: language === 'sinhala' ? 'City General Hospital' : language === 'tamil' ? 'City General Hospital' : 'City General Hospital',
-      },
-      {
-        id: 'c2',
-        title:
-          language === 'sinhala'
-            ? 'සාමාන්‍ය වෛද්‍ය පරීක්ෂාව'
-            : language === 'tamil'
-              ? 'பொது மருத்துவ பரிசோதனை'
-              : 'General Checkup',
-        when: 'Thu • 4:15 PM',
-        where: language === 'sinhala' ? 'HealHub Care Center' : language === 'tamil' ? 'HealHub Care Center' : 'HealHub Care Center',
-      },
-    ];
-
-    const recentAppointments = [
-      {
-        id: 'a1',
-        doctor: 'Dr. Jayasinghe',
-        date: language === 'sinhala' ? 'අද' : language === 'tamil' ? 'இன்று' : 'Today',
-        time: '10:30 AM',
-        status: language === 'sinhala' ? 'තහවුරු කර ඇත' : language === 'tamil' ? 'உறுதிசெய்யப்பட்டது' : 'Confirmed',
-      },
-      {
-        id: 'a2',
-        doctor: 'Dr. Fernando',
-        date: language === 'sinhala' ? 'ඊයේ' : language === 'tamil' ? 'நேற்று' : 'Yesterday',
-        time: '3:10 PM',
-        status: language === 'sinhala' ? 'නිමාවිය' : language === 'tamil' ? 'முடிந்தது' : 'Completed',
-      },
-    ];
-
-    return { medicines, clinics, recentAppointments };
-  }, [language]);
-
-  const doctorOptions = useMemo(() => {
-    return [
-      { id: 'd1', name: 'Dr. Jayasinghe', specialty: language === 'sinhala' ? 'සාමාන්‍ය වෛද්‍ය' : language === 'tamil' ? 'பொது மருத்துவர்' : 'General Practice' },
-      { id: 'd2', name: 'Dr. Fernando', specialty: language === 'sinhala' ? 'ඩර්මටෝලජි' : language === 'tamil' ? 'டெர்மடாலஜி' : 'Dermatology' },
-      { id: 'd3', name: 'Dr. Perera', specialty: language === 'sinhala' ? 'වවුන්ඩ් කෙයාර්' : language === 'tamil' ? 'காய சிகிச்சை' : 'Wound Care' },
-    ];
-  }, [language]);
+    return {
+      medicines: homeMedicines,
+      clinics: homeClinics,
+      recentAppointments: homeRecentAppointments,
+    };
+  }, [homeMedicines, homeClinics, homeRecentAppointments]);
 
   const bookAppointmentLabel = useMemo(() => {
     if (language === 'sinhala') return 'වෙන්කරගන්න';
@@ -309,6 +314,161 @@ export default function Patientdashboard({ accessToken, onOpenAiDetect, onOpenNo
     };
   }, [accessToken]);
 
+  useEffect(() => {
+    // Real data for home sections + notifications count.
+    let cancelled = false;
+
+    async function loadHomeData() {
+      if (!accessToken) return;
+
+      let docMap: Record<number, DoctorRow> = doctorById;
+
+      // Unread notifications count
+      const notifRes = await apiGet<any>('/api/patient/notifications?is_read=false&limit=100', accessToken);
+      if (!cancelled && notifRes.ok) {
+        const rows = Array.isArray(notifRes.data?.data) ? notifRes.data.data : [];
+        setNotificationCount(rows.length);
+      }
+
+      // Doctor list (for mapping id -> name)
+      const docsRes = await apiGet<any>('/api/appointment/doctors');
+      if (!cancelled && docsRes.ok) {
+        const rows: DoctorRow[] = Array.isArray(docsRes.data?.data) ? docsRes.data.data : [];
+        const map: Record<number, DoctorRow> = {};
+        for (const doc of rows) map[doc.doctor_id] = doc;
+        docMap = map;
+        setDoctorById(map);
+      }
+
+      // Dashboard (clinics + appointments)
+      const dashRes = await apiGet<any>('/api/patient/dashboard', accessToken);
+      if (!cancelled && dashRes.ok) {
+        const data = dashRes.data?.data ?? {};
+        const clinics: ClinicRow[] = Array.isArray(data.clinics) ? data.clinics : [];
+        const appts: AppointmentRow[] = Array.isArray(data.appointments) ? data.appointments : [];
+
+        const clinicItems = clinics
+          .filter((c) => String(c.status || '').toLowerCase() === 'scheduled')
+          .slice(0, 6)
+          .map((c) => {
+            const doc = docMap[c.doctor_id];
+            const doctorName = doc?.full_name ? `Dr. ${doc.full_name}` : `Doctor #${c.doctor_id}`;
+            return {
+              id: String(c.clinic_id),
+              title: doctorName,
+              when: `${c.clinic_date} • ${String(c.start_time || '').slice(0, 5)}`,
+              where: '',
+            };
+          });
+        setHomeClinics(clinicItems);
+
+        const apptItems = appts
+          .slice(0, 6)
+          .map((a) => {
+            const doc = docMap[a.doctor_id];
+            const doctorName = doc?.full_name ? `Dr. ${doc.full_name}` : `Doctor #${a.doctor_id}`;
+            return {
+              id: String(a.appointment_id),
+              doctor: doctorName,
+              date: String(a.appointment_date),
+              time: String(a.appointment_time).slice(0, 5),
+              status: String(a.status),
+            };
+          });
+        setHomeRecentAppointments(apptItems);
+      }
+
+      // Medicines (today reminders + medication lookup)
+      const [medsRes, remindersRes] = await Promise.all([
+        apiGet<any>('/api/patient/medications', accessToken),
+        apiGet<any>('/api/patient/medicine-reminders', accessToken),
+      ]);
+
+      if (cancelled) return;
+
+      const meds: MedicationRow[] = Array.isArray(medsRes.data?.data) ? medsRes.data.data : [];
+      const medsById: Record<number, MedicationRow> = {};
+      for (const m of meds) medsById[m.medication_id] = m;
+
+      const reminders: MedicineReminderRow[] = Array.isArray(remindersRes.data?.data) ? remindersRes.data.data : [];
+      const reminderItems = reminders
+        .filter((r) => String(r.status || '').toLowerCase() === 'pending')
+        .sort((a, b) => String(a.reminder_time).localeCompare(String(b.reminder_time)))
+        .slice(0, 6)
+        .map((r) => {
+          const med = medsById[r.medication_id];
+          return {
+            id: String(r.reminder_id),
+            name: med?.medicine_name ? String(med.medicine_name) : `Medicine #${r.medication_id}`,
+            time: String(r.reminder_time).slice(0, 5),
+            note: med?.dosage ? String(med.dosage) : '',
+          };
+        });
+      setHomeMedicines(reminderItems);
+    }
+
+    loadHomeData();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [accessToken]);
+
+  useEffect(() => {
+    // Load appointments when appointment tab is active.
+    let cancelled = false;
+
+    async function loadAppointments() {
+      if (!accessToken) return;
+      const res = await apiGet<any>('/api/patient/appointments', accessToken);
+      if (cancelled) return;
+      if (!res.ok) return;
+      const rows: AppointmentRow[] = Array.isArray(res.data?.data) ? res.data.data : [];
+      setAppointments(rows);
+    }
+
+    if (activeTab === 'appointment') {
+      loadAppointments();
+    }
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTab, accessToken]);
+
+  useEffect(() => {
+    // Doctor search by specialization + name.
+    let cancelled = false;
+    const handle = setTimeout(async () => {
+      try {
+        setDoctorLoadError('');
+        const params = new URLSearchParams();
+        if (doctorQuerySpecialty.trim()) params.set('specialization', doctorQuerySpecialty.trim());
+        if (doctorQueryName.trim()) params.set('q', doctorQueryName.trim());
+
+        const url = params.toString() ? `/api/appointment/doctors?${params.toString()}` : '/api/appointment/doctors';
+        const res = await apiGet<any>(url);
+        if (cancelled) return;
+        if (!res.ok) {
+          setDoctors([]);
+          setDoctorLoadError('Failed to load doctors');
+          return;
+        }
+        const rows: DoctorRow[] = Array.isArray(res.data?.data) ? res.data.data : [];
+        setDoctors(rows);
+      } catch (e: any) {
+        if (cancelled) return;
+        setDoctors([]);
+        setDoctorLoadError(e?.message ? String(e.message) : 'Failed to load doctors');
+      }
+    }, 350);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(handle);
+    };
+  }, [doctorQuerySpecialty, doctorQueryName]);
+
   const showReminderToast = (variant: 'success' | 'error' | 'info', message: string) => {
     if (reminderToastTimer.current) {
       clearTimeout(reminderToastTimer.current);
@@ -410,7 +570,22 @@ export default function Patientdashboard({ accessToken, onOpenAiDetect, onOpenNo
               <TouchableOpacity
                 style={[styles.emergencyBtn, { backgroundColor: colors.danger }]}
                 activeOpacity={0.85}
-                onPress={onOpenNearbyAmbulance}
+                onPress={() => {
+                  if (!onOpenNearbyAmbulance) return;
+
+                  // Clear previous ambulance request status/notifications before trying again.
+                  void (async () => {
+                    if (accessToken) {
+                      try {
+                        await apiPost<any>('/api/patient/notifications/clear', { type: 'Ambulance' }, accessToken);
+                      } catch {
+                        // ignore (best-effort)
+                      }
+                    }
+
+                    onOpenNearbyAmbulance();
+                  })();
+                }}
                 disabled={!onOpenNearbyAmbulance}
               >
                 <Text style={styles.emergencyBtnText}>
@@ -499,6 +674,16 @@ export default function Patientdashboard({ accessToken, onOpenAiDetect, onOpenNo
                   <Text style={[styles.itemRight, { color: colors.primary }]}>{m.time}</Text>
                 </View>
               ))}
+
+              {homeSections.medicines.length === 0 && (
+                <Text style={[styles.cardText, { color: colors.subtext, marginTop: 8 }]}>
+                  {language === 'sinhala'
+                    ? 'අද සඳහා ඖෂධ මතක් කිරීම් නැත.'
+                    : language === 'tamil'
+                      ? 'இன்றைக்கு மருந்து நினைவூட்டல்கள் இல்லை.'
+                      : 'No medicine reminders for today.'}
+                </Text>
+              )}
             </View>
 
             <View style={[styles.sectionCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
@@ -511,7 +696,7 @@ export default function Patientdashboard({ accessToken, onOpenAiDetect, onOpenNo
                   <View style={{ flex: 1 }}>
                     <Text style={[styles.itemTitle, { color: colors.text }]}>{c.title}</Text>
                     <Text style={[styles.itemSub, { color: colors.subtext }]}>
-                      {c.when} • {c.where}
+                      {c.where ? `${c.when} • ${c.where}` : c.when}
                     </Text>
                   </View>
                   <Text style={[styles.itemRight, { color: colors.primary }]}>
@@ -519,6 +704,16 @@ export default function Patientdashboard({ accessToken, onOpenAiDetect, onOpenNo
                   </Text>
                 </View>
               ))}
+
+              {homeSections.clinics.length === 0 && (
+                <Text style={[styles.cardText, { color: colors.subtext, marginTop: 8 }]}>
+                  {language === 'sinhala'
+                    ? 'ඉදිරි ක්ලිනික් නොමැත.'
+                    : language === 'tamil'
+                      ? 'வரவிருக்கும் கிளினிக்குகள் இல்லை.'
+                      : 'No upcoming clinics.'}
+                </Text>
+              )}
             </View>
 
             <View style={[styles.sectionCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
@@ -537,6 +732,16 @@ export default function Patientdashboard({ accessToken, onOpenAiDetect, onOpenNo
                   <Text style={[styles.itemRight, { color: colors.primary }]}>⭐</Text>
                 </View>
               ))}
+
+              {homeSections.recentAppointments.length === 0 && (
+                <Text style={[styles.cardText, { color: colors.subtext, marginTop: 8 }]}>
+                  {language === 'sinhala'
+                    ? 'වෙන්කිරීම් දත්ත නොමැත.'
+                    : language === 'tamil'
+                      ? 'நியமன தரவு இல்லை.'
+                      : 'No appointments found.'}
+                </Text>
+              )}
             </View>
           </ScrollView>
         ) : activeTab === 'appointment' ? (
@@ -560,14 +765,44 @@ export default function Patientdashboard({ accessToken, onOpenAiDetect, onOpenNo
               <Text style={[styles.fieldLabel, { color: colors.subtext }]}>
                 {language === 'sinhala' ? 'වෛද්‍යවරයා' : language === 'tamil' ? 'மருத்துவர்' : 'Doctor'}
               </Text>
+
+              <TextInput
+                value={doctorQuerySpecialty}
+                onChangeText={(v) => {
+                  setDoctorQuerySpecialty(v);
+                  setSelectedDoctor(null);
+                }}
+                placeholder={language === 'sinhala' ? 'විශේෂත්වය අනුව සොයන්න' : language === 'tamil' ? 'சிறப்பு மூலம் தேடு' : 'Search by specialty'}
+                placeholderTextColor={colors.subtext}
+                style={[styles.input, { borderColor: colors.border, color: colors.text, backgroundColor: colors.background }]}
+              />
+
+              <TextInput
+                value={doctorQueryName}
+                onChangeText={(v) => {
+                  setDoctorQueryName(v);
+                  setSelectedDoctor(null);
+                }}
+                placeholder={language === 'sinhala' ? 'නම අනුව සොයන්න' : language === 'tamil' ? 'பெயர் மூலம் தேடு' : 'Search by doctor name'}
+                placeholderTextColor={colors.subtext}
+                style={[styles.input, { borderColor: colors.border, color: colors.text, backgroundColor: colors.background, marginTop: 10 }]}
+              />
+
+              {!!doctorLoadError && (
+                <Text style={[styles.noteText, { color: colors.subtext }]}>{doctorLoadError}</Text>
+              )}
+
               <View style={styles.pillsWrap}>
-                {doctorOptions.map((d) => {
-                  const active = selectedDoctor === d.name;
+                {doctors.map((d) => {
+                  const active = selectedDoctor?.doctor_id === d.doctor_id;
                   return (
                     <TouchableOpacity
-                      key={d.id}
+                      key={String(d.doctor_id)}
                       activeOpacity={0.85}
-                      onPress={() => setSelectedDoctor(d.name)}
+                      onPress={() => {
+                        setSelectedDoctor(d);
+                        setAppointmentError('');
+                      }}
                       style={[
                         styles.pillChip,
                         {
@@ -577,9 +812,9 @@ export default function Patientdashboard({ accessToken, onOpenAiDetect, onOpenNo
                       ]}
                     >
                       <Text style={[styles.pillChipText, { color: active ? colors.primary : colors.subtext }]}>
-                        {d.name}
+                        {`Dr. ${d.full_name}`}
                       </Text>
-                      <Text style={[styles.pillChipSub, { color: colors.subtext }]}>{d.specialty}</Text>
+                      <Text style={[styles.pillChipSub, { color: colors.subtext }]}>{d.specialization}</Text>
                     </TouchableOpacity>
                   );
                 })}
@@ -656,35 +891,63 @@ export default function Patientdashboard({ accessToken, onOpenAiDetect, onOpenNo
                 activeOpacity={0.85}
                 style={[styles.primaryAction, { backgroundColor: colors.primary }]}
                 onPress={() => {
-                  const doctor = selectedDoctor.trim();
+                  const doctor = selectedDoctor;
                   const dt = selectedDateTime;
                   const reason = appointmentReason.trim();
 
-                  if (!doctor || !dt) return;
+                  if (!doctor) {
+                    setAppointmentError(
+                      language === 'sinhala'
+                        ? 'වෛද්‍යවරයෙකු තෝරන්න.'
+                        : language === 'tamil'
+                          ? 'மருத்துவரை தேர்வு செய்யவும்.'
+                          : 'Please select a doctor.'
+                    );
+                    return;
+                  }
+
+                  if (!dt) return;
 
                   if (!validateNotPast(dt)) {
                     setAppointmentError(cannotPastErrorText);
                     return;
                   }
 
-                  const id = `${Date.now()}`;
-                  setAppointments((prev) => [
-                    {
-                      id,
-                      doctor,
-                      date: formatDateLabel(appointmentDate),
-                      time: formatTimeLabel(appointmentTime),
-                      reason,
-                      status: 'pending',
-                    },
-                    ...prev,
-                  ]);
-
                   void (async () => {
                     try {
+                      if (!accessToken) {
+                        setAppointmentError('Not authenticated');
+                        return;
+                      }
+
+                      const appointment_date = formatDateLabel(appointmentDate);
+                      const appointment_time = formatTimeLabel(appointmentTime);
+
+                      const apiRes = await apiPost<any>(
+                        '/api/patient/appointments',
+                        {
+                          doctor_id: doctor.doctor_id,
+                          appointment_date,
+                          appointment_time,
+                          symptoms: reason,
+                        },
+                        accessToken
+                      );
+
+                      if (!apiRes.ok || !apiRes.data?.success) {
+                        const msg = (apiRes.data && (apiRes.data.message || apiRes.data.error)) || 'Failed to book appointment';
+                        setAppointmentError(String(msg));
+                        return;
+                      }
+
+                      const created = apiRes.data?.data as AppointmentRow | undefined;
+                      if (created) {
+                        setAppointments((prev) => [created, ...prev]);
+                      }
+
                       await scheduleAlarmAtAsync({
                         title: language === 'sinhala' ? 'වෙන්කිරීම් මතක් කිරීම' : language === 'tamil' ? 'நியமன நினைவூட்டல்' : 'Appointment reminder',
-                        body: `${doctor} • ${formatDateLabel(appointmentDate)} ${formatTimeLabel(appointmentTime)}`,
+                        body: `Dr. ${doctor.full_name} • ${appointment_date} ${appointment_time}`,
                         date: dt,
                       });
 
@@ -718,10 +981,10 @@ export default function Patientdashboard({ accessToken, onOpenAiDetect, onOpenNo
 
               <Text style={[styles.noteText, { color: colors.subtext }]}>
                 {language === 'sinhala'
-                  ? 'සටහන: මෙය UI පමණි. පසුව සැබෑ වෙන්කිරීම් (API) එක් කළ හැක.'
+                  ? 'සටහන: වෙන්කිරීම සැබෑ දත්ත (API) මත පදනම්ව සිදු වේ.'
                   : language === 'tamil'
-                    ? 'குறிப்பு: இது UI மட்டும். பின்னர் உண்மை முன்பதிவு (API) சேர்க்கலாம்.'
-                    : 'Note: UI only. We can connect real booking (API) later.'}
+                    ? 'குறிப்பு: முன்பதிவு உண்மை தரவு (API) மூலம் செய்யப்படுகிறது.'
+                    : 'Note: Booking uses real backend data (API).'}
               </Text>
             </View>
 
@@ -739,40 +1002,24 @@ export default function Patientdashboard({ accessToken, onOpenAiDetect, onOpenNo
                       : 'No appointments yet.'}
                 </Text>
               ) : (
-                appointments.map((a) => (
-                  <View key={a.id} style={[styles.itemRow, { borderTopColor: colors.border }]}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={[styles.itemTitle, { color: colors.text }]}>{a.doctor}</Text>
-                      <Text style={[styles.itemSub, { color: colors.subtext }]}>
-                        {a.date} • {a.time}
-                        {a.reason ? ` • ${a.reason}` : ''}
-                      </Text>
+                appointments.map((a) => {
+                  const doc = doctorById[a.doctor_id];
+                  const doctorName = doc?.full_name ? `Dr. ${doc.full_name}` : `Doctor #${a.doctor_id}`;
+                  return (
+                    <View key={String(a.appointment_id)} style={[styles.itemRow, { borderTopColor: colors.border }]}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.itemTitle, { color: colors.text }]}>{doctorName}</Text>
+                        <Text style={[styles.itemSub, { color: colors.subtext }]}>
+                          {String(a.appointment_date)} • {String(a.appointment_time).slice(0, 5)}
+                          {a.symptoms ? ` • ${a.symptoms}` : ''}
+                        </Text>
+                      </View>
+                      <View style={[styles.smallPill, { borderColor: colors.primary }]}>
+                        <Text style={[styles.smallPillText, { color: colors.primary }]}>{String(a.status)}</Text>
+                      </View>
                     </View>
-                    <TouchableOpacity
-                      activeOpacity={0.85}
-                      style={[styles.smallPill, { borderColor: colors.primary }]}
-                      onPress={() => {
-                        setAppointments((prev) =>
-                          prev.map((x) => (x.id === a.id ? { ...x, status: 'confirmed' } : x)),
-                        );
-                      }}
-                    >
-                      <Text style={[styles.smallPillText, { color: colors.primary }]}>
-                        {a.status === 'confirmed'
-                          ? language === 'sinhala'
-                            ? 'තහවුරු' 
-                            : language === 'tamil'
-                              ? 'உறுதி'
-                              : 'Confirmed'
-                          : language === 'sinhala'
-                            ? 'Pending'
-                            : language === 'tamil'
-                              ? 'Pending'
-                              : 'Pending'}
-                      </Text>
-                    </TouchableOpacity>
-                  </View>
-                ))
+                  );
+                })
               )}
             </View>
           </ScrollView>
