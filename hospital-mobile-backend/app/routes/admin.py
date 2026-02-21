@@ -46,8 +46,45 @@ def _attach_user_emails(rows: list, user_id_key: str = 'user_id') -> list:
     return rows
 
 
+def _flatten_user_fields(rows: list, user_obj_key: str = 'user') -> list:
+    """Flattens PostgREST nested user object fields to match our existing API shape.
+
+    When selecting with e.g. `user:users(email,role,...)`, PostgREST returns:
+      { ..., "user": {"email": "...", "role": "..."} }
+    The UI expects `email`/`role` and `user_is_*` fields at the top-level.
+    """
+    for r in rows:
+        if not isinstance(r, dict):
+            continue
+
+        u = None
+        if user_obj_key in r and isinstance(r.get(user_obj_key), dict):
+            u = r.get(user_obj_key)
+        elif 'users' in r and isinstance(r.get('users'), dict):
+            u = r.get('users')
+
+        if not u:
+            continue
+
+        if 'email' in u and u.get('email') is not None:
+            r['email'] = u.get('email')
+        if 'role' in u and u.get('role') is not None:
+            r['role'] = u.get('role')
+        if 'is_active' in u and u.get('is_active') is not None:
+            r['user_is_active'] = u.get('is_active')
+        if 'is_verified' in u and u.get('is_verified') is not None:
+            r['user_is_verified'] = u.get('is_verified')
+        if 'created_at' in u and u.get('created_at') is not None:
+            r['user_created_at'] = u.get('created_at')
+
+        r.pop(user_obj_key, None)
+        r.pop('users', None)
+
+    return rows
+
+
 def _create_user(*, email: str, password: str, role: str, is_verified: bool = True, is_active: bool = True):
-    if get_user_by_email(email):
+    if _admin_get_user_by_email(email):
         return None, (jsonify({'success': False, 'message': 'Email already registered'}), 409)
 
     user_payload = {
@@ -66,6 +103,16 @@ def _create_user(*, email: str, password: str, role: str, is_verified: bool = Tr
     return result['data'][0], None
 
 
+def _admin_get_user_by_email(email: str):
+    email = (email or '').strip().lower()
+    if not email:
+        return None
+    result = SupabaseClient.execute_admin_query('users', 'select', filter_email=email, limit=1)
+    if result.get('success') and result.get('data'):
+        return result['data'][0]
+    return None
+
+
 # -----------------
 # Doctors (Admin)
 # -----------------
@@ -79,15 +126,44 @@ def admin_list_doctors():
             return err
 
         q = (request.args.get('q') or '').strip()
+        specialization = (request.args.get('specialization') or '').strip()
+        min_fee_raw = (request.args.get('min_fee') or '').strip()
+        max_fee_raw = (request.args.get('max_fee') or '').strip()
+
         query = {'order_by': 'created_at', 'order_desc': True}
+        filters = []
         if q:
             query['filter_full_name'] = ('ilike', f'%{q}%')
 
-        result = SupabaseClient.execute_admin_query('doctors', 'select', **query)
+        if specialization:
+            query['filter_specialization'] = ('ilike', f'%{specialization}%')
+
+        try:
+            if min_fee_raw:
+                filters.append(('consultation_fee', 'gte', float(min_fee_raw)))
+        except ValueError:
+            pass
+
+        try:
+            if max_fee_raw:
+                filters.append(('consultation_fee', 'lte', float(max_fee_raw)))
+        except ValueError:
+            pass
+
+        result = SupabaseClient.execute_admin_query(
+            'doctors',
+            'select',
+            columns=(
+                'doctor_id,user_id,full_name,specialization,qualification,phone,email,consultation_fee,is_available,created_at,'
+                'user:users(email,role,is_active,is_verified,created_at)'
+            ),
+            filters=filters,
+            **query,
+        )
         if not result.get('success'):
             return jsonify({'success': False, 'message': 'Failed to fetch doctors'}), 500
 
-        rows = _attach_user_emails(result.get('data') or [])
+        rows = _flatten_user_fields(result.get('data') or [])
         return jsonify({'success': True, 'data': rows, 'count': len(rows)}), 200
     except Exception as e:
         logger.error(f"Admin list doctors error: {e}")
@@ -161,12 +237,20 @@ def admin_get_doctor(doctor_id: int):
         if err:
             return err
 
-        result = SupabaseClient.execute_admin_query('doctors', 'select', filter_doctor_id=doctor_id)
+        result = SupabaseClient.execute_admin_query(
+            'doctors',
+            'select',
+            filter_doctor_id=doctor_id,
+            columns=(
+                'doctor_id,user_id,full_name,specialization,qualification,phone,email,consultation_fee,'
+                'available_days,start_time,end_time,is_available,created_at,'
+                'user:users(email,role,is_active,is_verified,created_at)'
+            ),
+        )
         if not result.get('success') or not result.get('data'):
             return jsonify({'success': False, 'message': 'Doctor not found'}), 404
 
-        row = result['data'][0]
-        row = _attach_user_emails([row])[0]
+        row = _flatten_user_fields([result['data'][0]])[0]
         return jsonify({'success': True, 'data': row}), 200
 
     except Exception as e:
@@ -205,13 +289,26 @@ def admin_update_doctor(doctor_id: int):
 
         # Optional: admin can update doctor's email directly
         new_email = (data.get('email') or '').strip().lower() if 'email' in data else None
-        if new_email and user_id:
-            if get_user_by_email(new_email) and get_user_by_email(new_email).get('user_id') != user_id:
-                return jsonify({'success': False, 'message': 'Email already in use'}), 409
-            upd_user = SupabaseClient.execute_admin_query('users', 'update', filter_user_id=user_id, email=new_email)
-            if not upd_user.get('success'):
-                return jsonify({'success': False, 'message': 'Failed to update email'}), 500
-            SupabaseClient.execute_admin_query('doctors', 'update', filter_doctor_id=doctor_id, email=new_email)
+        if new_email is not None:
+            if not new_email:
+                return jsonify({'success': False, 'message': 'Email cannot be empty'}), 400
+            if not user_id:
+                return jsonify({'success': False, 'message': 'Doctor user not found'}), 400
+
+            current_email = (doctor.get('email') or '').strip().lower()
+            if new_email != current_email:
+                existing = _admin_get_user_by_email(new_email)
+                if existing and existing.get('user_id') != user_id:
+                    return jsonify({'success': False, 'message': 'Email already in use'}), 409
+
+                upd_user = SupabaseClient.execute_admin_query('users', 'update', filter_user_id=user_id, email=new_email)
+                if not upd_user.get('success'):
+                    return jsonify({'success': False, 'message': 'Failed to update email'}), 500
+                # If no rows were updated, don't silently proceed; it can lead to later duplicate accounts.
+                if not upd_user.get('data'):
+                    return jsonify({'success': False, 'message': 'Failed to update email (no rows updated)'}), 500
+
+                SupabaseClient.execute_admin_query('doctors', 'update', filter_doctor_id=doctor_id, email=new_email)
 
         return jsonify({'success': True, 'message': 'Doctor updated'}), 200
 
@@ -249,6 +346,54 @@ def admin_delete_doctor(doctor_id: int):
         return jsonify({'success': False, 'message': 'Failed to delete doctor', 'error': str(e)}), 500
 
 
+@admin_bp.route('/doctors/<int:doctor_id>/alerts', methods=['POST'])
+@jwt_required()
+def admin_create_doctor_alert(doctor_id: int):
+    """Create an alert (notification) for a specific doctor."""
+    try:
+        current_user_id = get_jwt_identity()
+        _, err = _require_admin(current_user_id)
+        if err:
+            return err
+
+        data = request.get_json() or {}
+        title = (data.get('title') or '').strip()
+        message = (data.get('message') or '').strip()
+        ntype = (data.get('type') or 'Alert').strip() or 'Alert'
+
+        if not title or not message:
+            return jsonify({'success': False, 'message': 'title and message are required'}), 400
+
+        doctor_result = SupabaseClient.execute_admin_query('doctors', 'select', filter_doctor_id=doctor_id)
+        if not doctor_result.get('success') or not doctor_result.get('data'):
+            return jsonify({'success': False, 'message': 'Doctor not found'}), 404
+
+        doctor = doctor_result['data'][0]
+        doctor_user_id = doctor.get('user_id')
+        if not doctor_user_id:
+            return jsonify({'success': False, 'message': 'Doctor user not found'}), 404
+
+        ins = SupabaseClient.execute_admin_query(
+            'notifications',
+            'insert',
+            user_id=doctor_user_id,
+            title=title,
+            message=message,
+            type=ntype,
+            is_read=False,
+            created_at=sl_now_iso(),
+        )
+
+        if not ins.get('success'):
+            return jsonify({'success': False, 'message': 'Failed to create alert'}), 500
+
+        return jsonify({'success': True, 'message': 'Alert created', 'data': (ins.get('data') or [None])[0]}), 201
+
+    except Exception as e:
+        logger.error(f"Admin create doctor alert error: {e}")
+        return jsonify({'success': False, 'message': 'Failed to create alert', 'error': str(e)}), 500
+
+
 # -----------------
 # Patients (Admin)
 # -----------------
@@ -266,11 +411,16 @@ def admin_list_patients():
         if q:
             query['filter_full_name'] = ('ilike', f'%{q}%')
 
-        result = SupabaseClient.execute_admin_query('patients', 'select', **query)
+        result = SupabaseClient.execute_admin_query(
+            'patients',
+            'select',
+            columns='patient_id,user_id,full_name,phone,dob,gender,created_at,user:users(email)',
+            **query,
+        )
         if not result.get('success'):
             return jsonify({'success': False, 'message': 'Failed to fetch patients'}), 500
 
-        rows = _attach_user_emails(result.get('data') or [])
+        rows = _flatten_user_fields(result.get('data') or [])
         return jsonify({'success': True, 'data': rows, 'count': len(rows)}), 200
     except Exception as e:
         logger.error(f"Admin list patients error: {e}")
@@ -342,11 +492,16 @@ def admin_get_patient(patient_id: int):
         if err:
             return err
 
-        result = SupabaseClient.execute_admin_query('patients', 'select', filter_patient_id=patient_id)
+        result = SupabaseClient.execute_admin_query(
+            'patients',
+            'select',
+            filter_patient_id=patient_id,
+            columns='*,user:users(email,role,is_active,is_verified,created_at)',
+        )
         if not result.get('success') or not result.get('data'):
             return jsonify({'success': False, 'message': 'Patient not found'}), 404
 
-        row = _attach_user_emails([result['data'][0]])[0]
+        row = _flatten_user_fields([result['data'][0]])[0]
         return jsonify({'success': True, 'data': row}), 200
 
     except Exception as e:
@@ -442,11 +597,16 @@ def admin_list_ambulances():
         if q:
             query['filter_driver_name'] = ('ilike', f'%{q}%')
 
-        result = SupabaseClient.execute_admin_query('ambulances', 'select', **query)
+        result = SupabaseClient.execute_admin_query(
+            'ambulances',
+            'select',
+            columns='ambulance_id,user_id,ambulance_number,driver_name,driver_phone,is_available,created_at,user:users(email)',
+            **query,
+        )
         if not result.get('success'):
             return jsonify({'success': False, 'message': 'Failed to fetch ambulances'}), 500
 
-        rows = _attach_user_emails(result.get('data') or [])
+        rows = _flatten_user_fields(result.get('data') or [])
         return jsonify({'success': True, 'data': rows, 'count': len(rows)}), 200
     except Exception as e:
         logger.error(f"Admin list ambulances error: {e}")
@@ -511,11 +671,16 @@ def admin_get_ambulance(ambulance_id: int):
         if err:
             return err
 
-        result = SupabaseClient.execute_admin_query('ambulances', 'select', filter_ambulance_id=ambulance_id)
+        result = SupabaseClient.execute_admin_query(
+            'ambulances',
+            'select',
+            filter_ambulance_id=ambulance_id,
+            columns='*,user:users(email,role,is_active,is_verified,created_at)',
+        )
         if not result.get('success') or not result.get('data'):
             return jsonify({'success': False, 'message': 'Ambulance not found'}), 404
 
-        row = _attach_user_emails([result['data'][0]])[0]
+        row = _flatten_user_fields([result['data'][0]])[0]
         return jsonify({'success': True, 'data': row}), 200
 
     except Exception as e:

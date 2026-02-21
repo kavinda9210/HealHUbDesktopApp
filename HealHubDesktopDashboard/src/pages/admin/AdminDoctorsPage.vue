@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onActivated, onMounted, ref } from 'vue'
+import { type LocationQueryRaw, useRoute, useRouter } from 'vue-router'
 import { api, ApiError } from '../../lib/api'
 import { useAuthStore } from '../../stores/auth'
 
@@ -16,28 +17,58 @@ type DoctorRow = {
 }
 
 const auth = useAuthStore()
+const route = useRoute()
+const router = useRouter()
 
 const rows = ref<DoctorRow[]>([])
 const isLoading = ref(false)
 const error = ref<string | null>(null)
 
-const createError = ref<string | null>(null)
-const createLoading = ref(false)
-const form = ref({
-  email: '',
-  password: '',
-  full_name: '',
+const success = ref<string | null>(null)
+const actionError = ref<string | null>(null)
+
+let successTimer: number | null = null
+let errorTimer: number | null = null
+
+function showSuccess(msg: string) {
+  success.value = msg
+  if (successTimer) window.clearTimeout(successTimer)
+  successTimer = window.setTimeout(() => {
+    success.value = null
+    successTimer = null
+  }, 3000)
+}
+
+function showError(msg: string) {
+  actionError.value = msg
+  if (errorTimer) window.clearTimeout(errorTimer)
+  errorTimer = window.setTimeout(() => {
+    actionError.value = null
+    errorTimer = null
+  }, 4000)
+}
+
+const filters = ref({
+  q: '',
   specialization: '',
-  phone: '',
-  consultation_fee: '',
+  min_fee: '',
+  max_fee: '',
 })
 
 async function load() {
   isLoading.value = true
   error.value = null
   try {
+    const minFee = filters.value.min_fee.trim() ? Number(filters.value.min_fee) : NaN
+    const maxFee = filters.value.max_fee.trim() ? Number(filters.value.max_fee) : NaN
     const res = await api.get<{ success: boolean; data: DoctorRow[] }>('/api/admin/doctors', {
       token: auth.accessToken,
+      query: {
+        q: filters.value.q.trim() || undefined,
+        specialization: filters.value.specialization.trim() || undefined,
+        min_fee: Number.isFinite(minFee) ? minFee : undefined,
+        max_fee: Number.isFinite(maxFee) ? maxFee : undefined,
+      },
     })
     rows.value = res.data || []
   } catch (e) {
@@ -47,81 +78,111 @@ async function load() {
   }
 }
 
-async function createDoctor() {
-  createLoading.value = true
-  createError.value = null
-  try {
-    const fee = form.value.consultation_fee ? Number(form.value.consultation_fee) : 0
-    const payload = {
-      email: form.value.email,
-      password: form.value.password,
-      full_name: form.value.full_name,
-      specialization: form.value.specialization,
-      phone: form.value.phone,
-      consultation_fee: Number.isFinite(fee) ? fee : 0,
-    }
-    await api.post('/api/admin/doctors', payload, { token: auth.accessToken })
-    form.value = { email: '', password: '', full_name: '', specialization: '', phone: '', consultation_fee: '' }
-    await load()
-  } catch (e) {
-    createError.value = e instanceof ApiError ? e.message : 'Failed to create doctor'
-  } finally {
-    createLoading.value = false
+async function applyFilters() {
+  success.value = null
+  actionError.value = null
+  await load()
+}
+
+async function clearFilters() {
+  filters.value = { q: '', specialization: '', min_fee: '', max_fee: '' }
+  success.value = null
+  actionError.value = null
+  await load()
+}
+
+function consumeNotice() {
+  const notice = route.query.notice
+  if (typeof notice !== 'string' || !notice) {
+    // When returning to this keep-alive page, clear stale notices.
+    success.value = null
+    actionError.value = null
+    return
   }
+
+  if (notice === 'doctor_created') showSuccess('Doctor created successfully.')
+  else if (notice === 'doctor_updated') showSuccess('Doctor updated successfully.')
+  else if (notice === 'doctor_deleted') showSuccess('Doctor deleted successfully.')
+
+  const nextQuery: LocationQueryRaw = { ...route.query }
+  delete (nextQuery as any).notice
+  router.replace({ query: nextQuery })
 }
 
 async function deleteDoctor(doctorId: number) {
   if (!confirm('Delete this doctor?')) return
+  actionError.value = null
+  success.value = null
   try {
     await api.del(`/api/admin/doctors/${doctorId}`, { token: auth.accessToken })
+    showSuccess('Doctor deleted successfully.')
     await load()
   } catch (e) {
-    alert(e instanceof ApiError ? e.message : 'Failed to delete doctor')
+    showError(e instanceof ApiError ? e.message : 'Failed to delete doctor')
   }
 }
 
-onMounted(load)
+onMounted(() => {
+  consumeNotice()
+  load()
+})
+onActivated(() => {
+  consumeNotice()
+  load()
+})
 </script>
 
 <template>
   <div>
-    <div class="text-xl font-semibold">Doctors</div>
+    <div class="flex items-start justify-between gap-4">
+      <div>
+        <div class="text-xl font-semibold">Doctors</div>
+        <div class="text-sm text-gray-500">Manage doctors</div>
+      </div>
+      <div class="flex items-center gap-2">
+        <router-link class="rounded bg-gray-900 px-4 py-2 text-sm text-white" to="/admin/doctors/create">
+          Create doctor
+        </router-link>
+      </div>
+    </div>
+
+    <div v-if="success" class="mt-4 rounded border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
+      {{ success }}
+    </div>
+    <div v-if="actionError" class="mt-4 rounded border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+      {{ actionError }}
+    </div>
 
     <div class="mt-4 rounded border border-gray-200 bg-white p-4">
-      <div class="text-sm font-medium">Create doctor</div>
-      <form class="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2" @submit.prevent="createDoctor">
+      <div class="text-sm font-medium">Filter doctors</div>
+      <form class="mt-3 grid grid-cols-1 gap-3 md:grid-cols-4" @submit.prevent="applyFilters">
         <div>
-          <label class="block text-xs font-medium text-gray-600">Email</label>
-          <input v-model="form.email" type="email" class="mt-1 w-full rounded border border-gray-300 px-3 py-2" required />
-        </div>
-        <div>
-          <label class="block text-xs font-medium text-gray-600">Password</label>
-          <input v-model="form.password" type="password" class="mt-1 w-full rounded border border-gray-300 px-3 py-2" required />
-        </div>
-        <div>
-          <label class="block text-xs font-medium text-gray-600">Full name</label>
-          <input v-model="form.full_name" class="mt-1 w-full rounded border border-gray-300 px-3 py-2" required />
+          <label class="block text-xs font-medium text-gray-600">Name</label>
+          <input v-model="filters.q" class="mt-1 w-full rounded border border-gray-300 px-3 py-2" placeholder="Search by name" />
         </div>
         <div>
           <label class="block text-xs font-medium text-gray-600">Specialization</label>
-          <input v-model="form.specialization" class="mt-1 w-full rounded border border-gray-300 px-3 py-2" required />
+          <input
+            v-model="filters.specialization"
+            class="mt-1 w-full rounded border border-gray-300 px-3 py-2"
+            placeholder="e.g. Cardiologist"
+          />
         </div>
         <div>
-          <label class="block text-xs font-medium text-gray-600">Phone</label>
-          <input v-model="form.phone" class="mt-1 w-full rounded border border-gray-300 px-3 py-2" required />
+          <label class="block text-xs font-medium text-gray-600">Min fee</label>
+          <input v-model="filters.min_fee" inputmode="decimal" class="mt-1 w-full rounded border border-gray-300 px-3 py-2" placeholder="0" />
         </div>
         <div>
-          <label class="block text-xs font-medium text-gray-600">Consultation fee</label>
-          <input v-model="form.consultation_fee" inputmode="decimal" class="mt-1 w-full rounded border border-gray-300 px-3 py-2" placeholder="0" />
+          <label class="block text-xs font-medium text-gray-600">Max fee</label>
+          <input v-model="filters.max_fee" inputmode="decimal" class="mt-1 w-full rounded border border-gray-300 px-3 py-2" placeholder="1000" />
         </div>
 
-        <div v-if="createError" class="md:col-span-2 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-          {{ createError }}
-        </div>
-
-        <div class="md:col-span-2">
-          <button class="rounded bg-gray-900 px-4 py-2 text-sm text-white disabled:opacity-60" :disabled="createLoading">
-            {{ createLoading ? 'Creating…' : 'Create doctor' }}
+        <div class="md:col-span-4 flex items-center gap-2">
+          <button class="rounded bg-gray-900 px-4 py-2 text-sm text-white disabled:opacity-60" :disabled="isLoading">
+            Apply filters
+          </button>
+          <button type="button" class="rounded border border-gray-300 px-4 py-2 text-sm" @click="clearFilters" :disabled="isLoading">
+            Clear
           </button>
         </div>
       </form>
@@ -158,9 +219,20 @@ onMounted(load)
               <td class="px-4 py-2">{{ r.phone || '-' }}</td>
               <td class="px-4 py-2">{{ r.consultation_fee ?? '-' }}</td>
               <td class="px-4 py-2 text-right">
-                <button class="rounded border border-gray-300 px-3 py-1.5 text-xs" @click="deleteDoctor(r.doctor_id)">
-                  Delete
-                </button>
+                <div class="flex justify-end gap-2">
+                  <router-link class="rounded border border-gray-300 px-3 py-1.5 text-xs" :to="`/admin/doctors/${r.doctor_id}`">
+                    View
+                  </router-link>
+                  <router-link class="rounded border border-gray-300 px-3 py-1.5 text-xs" :to="`/admin/doctors/${r.doctor_id}/edit`">
+                    Edit
+                  </router-link>
+                  <router-link class="rounded border border-gray-300 px-3 py-1.5 text-xs" :to="`/admin/doctors/${r.doctor_id}/alerts`">
+                    Alerts
+                  </router-link>
+                  <button class="rounded border border-gray-300 px-3 py-1.5 text-xs" @click="deleteDoctor(r.doctor_id)">
+                    Delete
+                  </button>
+                </div>
               </td>
             </tr>
             <tr v-if="!isLoading && rows.length === 0">

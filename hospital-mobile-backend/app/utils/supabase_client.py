@@ -9,6 +9,7 @@ logger = logging.getLogger(__name__)
 class SupabaseClient:
     """Singleton Supabase client"""
     _instance: Optional[Client] = None
+    _service_instance: Optional[Client] = None
     
     @classmethod
     def get_client(cls) -> Client:
@@ -32,17 +33,21 @@ class SupabaseClient:
     @classmethod
     def get_service_client(cls) -> Client:
         """Get Supabase client with service role key for admin operations"""
-        try:
-            supabase_url = current_app.config['SUPABASE_URL']
-            service_key = current_app.config['SUPABASE_SERVICE_ROLE_KEY']
-            
-            if not supabase_url or not service_key:
-                raise ValueError("Supabase URL and Service Role Key must be set")
-            
-            return create_client(supabase_url, service_key)
-        except Exception as e:
-            logger.error(f"Failed to initialize Supabase service client: {str(e)}")
-            raise
+        if cls._service_instance is None:
+            try:
+                supabase_url = current_app.config['SUPABASE_URL']
+                service_key = current_app.config['SUPABASE_SERVICE_ROLE_KEY']
+
+                if not supabase_url or not service_key:
+                    raise ValueError("Supabase URL and Service Role Key must be set")
+
+                cls._service_instance = create_client(supabase_url, service_key)
+                logger.info("Supabase service client initialized successfully")
+            except Exception as e:
+                logger.error(f"Failed to initialize Supabase service client: {str(e)}")
+                raise
+
+        return cls._service_instance
     
     @classmethod
     def execute_query(cls, table: str, operation: str = 'select', **kwargs) -> Dict[str, Any]:
@@ -60,6 +65,7 @@ class SupabaseClient:
                 offset = kwargs.pop('offset', None)
                 order_by = kwargs.pop('order_by', None)
                 order_desc = bool(kwargs.pop('order_desc', False))
+                extra_filters = kwargs.pop('filters', None)
 
                 query = table_ref.select(columns)
                 
@@ -76,6 +82,17 @@ class SupabaseClient:
                                 query = query.filter(column, operator, filter_value)
                         else:
                             query = query.eq(column, value)
+
+                if isinstance(extra_filters, list):
+                    for f in extra_filters:
+                        if not isinstance(f, (list, tuple)) or len(f) != 3:
+                            continue
+                        col, operator, filter_value = f
+                        op = str(operator).lower()
+                        if op == 'in' and isinstance(filter_value, (list, tuple)):
+                            query = query.in_(str(col), list(filter_value))
+                        else:
+                            query = query.filter(str(col), operator, filter_value)
 
                 if order_by:
                     query = query.order(order_by, desc=order_desc)
@@ -153,6 +170,7 @@ class SupabaseClient:
                 limit = kwargs.pop('limit', None)
                 order_by = kwargs.pop('order_by', None)
                 order_desc = bool(kwargs.pop('order_desc', False))
+                extra_filters = kwargs.pop('filters', None)
 
                 query = table_ref.select(columns)
                 for key, value in kwargs.items():
@@ -167,6 +185,17 @@ class SupabaseClient:
                                 query = query.filter(column, operator, filter_value)
                         else:
                             query = query.eq(column, value)
+
+                if isinstance(extra_filters, list):
+                    for f in extra_filters:
+                        if not isinstance(f, (list, tuple)) or len(f) != 3:
+                            continue
+                        col, operator, filter_value = f
+                        op = str(operator).lower()
+                        if op == 'in' and isinstance(filter_value, (list, tuple)):
+                            query = query.in_(str(col), list(filter_value))
+                        else:
+                            query = query.filter(str(col), operator, filter_value)
 
                 if order_by:
                     query = query.order(order_by, desc=order_desc)

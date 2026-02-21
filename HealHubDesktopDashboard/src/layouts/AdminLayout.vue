@@ -1,12 +1,26 @@
 <script setup lang="ts">
-import { computed } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 
 const auth = useAuthStore()
+const route = useRoute()
 const router = useRouter()
 
 const displayName = computed(() => auth.user?.full_name || auth.user?.email || 'Admin')
+
+const isDoctorsOpen = ref(route.path.startsWith('/admin/doctors'))
+
+watch(
+  () => route.path,
+  (path) => {
+    if (path.startsWith('/admin/doctors')) isDoctorsOpen.value = true
+  },
+)
+
+function toggleDoctors() {
+  isDoctorsOpen.value = !isDoctorsOpen.value
+}
 
 function logout() {
   auth.logout()
@@ -22,7 +36,16 @@ function logout() {
 
       <nav class="mt-6 space-y-2 text-sm">
         <router-link class="block rounded px-3 py-2 hover:bg-gray-100" to="/admin/dashboard">Dashboard</router-link>
-        <router-link class="block rounded px-3 py-2 hover:bg-gray-100" to="/admin/doctors">Doctors</router-link>
+        <button
+          type="button"
+          class="w-full rounded px-3 py-2 text-left text-xs font-medium text-gray-500 hover:bg-gray-100"
+          :aria-expanded="isDoctorsOpen"
+          @click="toggleDoctors"
+        >
+          Doctors
+        </button>
+        <router-link v-if="isDoctorsOpen" class="block rounded px-3 py-2 pl-6 hover:bg-gray-100" to="/admin/doctors">Manage doctors</router-link>
+        <router-link v-if="isDoctorsOpen" class="block rounded px-3 py-2 pl-6 hover:bg-gray-100" to="/admin/doctors/create">Create doctor</router-link>
         <router-link class="block rounded px-3 py-2 hover:bg-gray-100" to="/admin/patients">Patients</router-link>
         <router-link class="block rounded px-3 py-2 hover:bg-gray-100" to="/admin/ambulances">Ambulances</router-link>
         <router-link class="block rounded px-3 py-2 hover:bg-gray-100" to="/admin/notifications">Notifications</router-link>
@@ -33,13 +56,17 @@ function logout() {
       <header class="border-b border-gray-200 bg-white px-6 py-4 flex items-center justify-between">
         <div class="text-sm text-gray-600">Welcome, <span class="font-medium text-gray-900">{{ displayName }}</span></div>
         <div class="flex items-center gap-3">
-          <router-link class="text-sm underline text-gray-700" to="/admin/dashboard">Profile</router-link>
+          <router-link class="text-sm underline text-gray-700" to="/admin/profile">Profile</router-link>
           <button class="rounded border border-gray-300 px-3 py-2 text-sm" @click="logout">Logout</button>
         </div>
       </header>
 
       <main class="flex-1 p-6 overflow-auto">
-        <router-view />
+        <router-view v-slot="{ Component }">
+          <keep-alive>
+            <component :is="Component" />
+          </keep-alive>
+        </router-view>
       </main>
 
       <footer class="border-t border-gray-200 bg-white px-6 py-3 text-xs text-gray-500">

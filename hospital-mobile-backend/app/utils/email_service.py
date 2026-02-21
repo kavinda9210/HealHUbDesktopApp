@@ -39,20 +39,25 @@ class EmailService:
             logger.info(f"Email sending suppressed. Would send to: {to_email}, Subject: {subject}")
             return True
         
+        mail_server = current_app.config.get('MAIL_SERVER')
+        mail_port = current_app.config.get('MAIL_PORT')
+        mail_use_tls = bool(current_app.config.get('MAIL_USE_TLS', True))
+        mail_username = current_app.config.get('MAIL_USERNAME')
+        mail_password = current_app.config.get('MAIL_PASSWORD')
+        default_sender = current_app.config.get('MAIL_DEFAULT_SENDER') or mail_username
+
         # Validate configuration
-        if not all([
-            current_app.config.get('MAIL_SERVER'),
-            current_app.config.get('MAIL_USERNAME'),
-            current_app.config.get('MAIL_PASSWORD')
-        ]):
-            logger.error("Email configuration incomplete")
+        if not mail_server or not mail_port or not mail_username or not mail_password:
+            logger.error(
+                "Email configuration incomplete (MAIL_SERVER/MAIL_PORT/MAIL_USERNAME/MAIL_PASSWORD required)"
+            )
             return False
         
         try:
             # Create message
             msg = MIMEMultipart('alternative')
             msg['Subject'] = subject
-            msg['From'] = current_app.config.get('MAIL_DEFAULT_SENDER', current_app.config['MAIL_USERNAME'])
+            msg['From'] = default_sender
             msg['To'] = to_email
             
             if cc_emails:
@@ -76,16 +81,36 @@ class EmailService:
                 msg.attach(MIMEText(text_content, 'html'))
             
             # Connect to SMTP server and send
-            with smtplib.SMTP(current_app.config['MAIL_SERVER'], current_app.config['MAIL_PORT']) as server:
-                server.starttls()
-                server.login(current_app.config['MAIL_USERNAME'], current_app.config['MAIL_PASSWORD'])
-                server.send_message(msg)
+            # NOTE: Most providers (including Gmail) use STARTTLS on port 587.
+            # Some providers use implicit SSL on port 465.
+            port_int = int(mail_port)
+            smtp_factory = smtplib.SMTP_SSL if port_int == 465 else smtplib.SMTP
+            with smtp_factory(mail_server, port_int, timeout=20) as server:
+                server.ehlo()
+                if port_int != 465 and mail_use_tls:
+                    server.starttls()
+                    server.ehlo()
+                server.login(mail_username, mail_password)
+                server.sendmail(default_sender, recipients, msg.as_string())
             
             logger.info(f"Email sent successfully to {to_email}")
             return True
+
+        except smtplib.SMTPAuthenticationError as e:
+            # Common with Gmail when using a normal password instead of an App Password,
+            # when 2FA is not enabled, or when the App Password was revoked.
+            logger.error(
+                "SMTP authentication failed for MAIL_USERNAME=%s via %s:%s. "
+                "If using Gmail, ensure 2-Step Verification is enabled and MAIL_PASSWORD is a valid App Password.",
+                mail_username,
+                mail_server,
+                mail_port,
+            )
+            logger.exception(f"Failed to send email to {to_email}: {str(e)}")
+            return False
             
         except Exception as e:
-            logger.error(f"Failed to send email to {to_email}: {str(e)}")
+            logger.exception(f"Failed to send email to {to_email}: {str(e)}")
             return False
     
     @staticmethod

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore, homePathForRole } from '../../stores/auth'
 
@@ -10,6 +10,13 @@ const route = useRoute()
 const email = ref('')
 const password = ref('')
 const formError = ref<string | null>(null)
+
+const expiredMessage = computed(() => {
+  const reason = typeof route.query.reason === 'string' ? route.query.reason : null
+  if (reason !== 'expired') return null
+  const msg = typeof route.query.msg === 'string' ? route.query.msg : null
+  return msg || 'Token has expired. Please login again.'
+})
 
 async function onSubmit() {
   formError.value = null
@@ -28,6 +35,10 @@ async function onSubmit() {
     <div class="w-full max-w-md rounded border border-gray-200 bg-white p-6">
       <div class="text-xl font-semibold">HealHub Desktop</div>
       <div class="text-sm text-gray-500">Admin / Doctor login</div>
+
+      <div v-if="expiredMessage" class="mt-4 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+        {{ expiredMessage }}
+      </div>
 
       <form class="mt-6 space-y-4" @submit.prevent="onSubmit">
         <div>

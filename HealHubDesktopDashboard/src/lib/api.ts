@@ -21,10 +21,24 @@ export class ApiError extends Error {
   }
 }
 
+export type UnauthorizedHandler = (info: { message: string; status: number; payload: unknown }) => void
+
+let unauthorizedHandler: UnauthorizedHandler | null = null
+let lastUnauthorizedAt = 0
+
+export function setUnauthorizedHandler(handler: UnauthorizedHandler | null) {
+  unauthorizedHandler = handler
+}
+
 async function request<T>(
   method: 'GET' | 'POST' | 'PUT' | 'DELETE',
   path: string,
-  options?: { token?: string | null; body?: unknown; query?: Record<string, string | number | boolean | undefined> },
+  options?: {
+    token?: string | null
+    body?: unknown
+    query?: Record<string, string | number | boolean | undefined>
+    timeoutMs?: number
+  },
 ): Promise<T> {
   const baseUrl = getBaseUrl()
 
@@ -42,11 +56,38 @@ async function request<T>(
   if (options?.token) headers.Authorization = `Bearer ${options.token}`
   if (options?.body !== undefined) headers['Content-Type'] = 'application/json'
 
-  const res = await fetch(url.toString(), {
-    method,
-    headers,
-    body: options?.body !== undefined ? JSON.stringify(options.body) : undefined,
-  })
+  const controller = new AbortController()
+  const timeoutMs = options?.timeoutMs ?? 20000
+  let timeoutId: number | null = null
+
+  let res: Response
+  try {
+    const fetchPromise = fetch(url.toString(), {
+      method,
+      headers,
+      body: options?.body !== undefined ? JSON.stringify(options.body) : undefined,
+      signal: controller.signal,
+    })
+
+    const timeoutPromise = new Promise<Response>((_, reject) => {
+      timeoutId = window.setTimeout(() => {
+        try {
+          controller.abort()
+        } catch {
+          // ignore
+        }
+        reject(new ApiError('Request timed out', 0, null))
+      }, timeoutMs)
+    })
+
+    res = await Promise.race([fetchPromise, timeoutPromise])
+  } catch (e) {
+    if (e instanceof ApiError) throw e
+    const isAbort = e instanceof DOMException && e.name === 'AbortError'
+    throw new ApiError(isAbort ? 'Request timed out' : 'Network error', 0, e)
+  } finally {
+    if (timeoutId != null) window.clearTimeout(timeoutId)
+  }
 
   const contentType = res.headers.get('content-type') || ''
   const isJson = contentType.includes('application/json')
@@ -57,6 +98,18 @@ async function request<T>(
       (payload && typeof payload === 'object' && 'message' in payload && typeof (payload as any).message === 'string')
         ? (payload as any).message
         : `Request failed (${res.status})`
+
+    if (res.status === 401 && options?.token && unauthorizedHandler) {
+      const now = Date.now()
+      if (now - lastUnauthorizedAt > 1000) {
+        lastUnauthorizedAt = now
+        try {
+          unauthorizedHandler({ message, status: res.status, payload })
+        } catch {
+          // Never let handler failures break request error reporting.
+        }
+      }
+    }
     throw new ApiError(message, res.status, payload)
   }
 

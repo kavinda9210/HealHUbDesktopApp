@@ -145,7 +145,11 @@ def register():
         
         return jsonify({
             'success': True,
-            'message': 'Registration successful. Please verify your email.',
+            'message': (
+                'Registration successful. Please verify your email.'
+                if email_sent
+                else 'Registration successful, but verification email could not be sent. Please contact support or try again later.'
+            ),
             'user_id': created_user['user_id'],
             'email_sent': email_sent
         }), 201
@@ -508,7 +512,11 @@ def forgot_password():
                 
                 return jsonify({
                     'success': True,
-                    'message': 'Password reset code sent to your email',
+                    'message': (
+                        'Password reset code sent to your email'
+                        if email_sent
+                        else 'If the email exists, a reset code has been sent'
+                    ),
                     'email_sent': email_sent
                 }), 200
         

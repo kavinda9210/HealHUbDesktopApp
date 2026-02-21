@@ -35,7 +35,11 @@ function logout() {
       </header>
 
       <main class="flex-1 p-6 overflow-auto">
-        <router-view />
+        <router-view v-slot="{ Component }">
+          <keep-alive>
+            <component :is="Component" />
+          </keep-alive>
+        </router-view>
       </main>
 
       <footer class="border-t border-gray-200 bg-white px-6 py-3 text-xs text-gray-500">

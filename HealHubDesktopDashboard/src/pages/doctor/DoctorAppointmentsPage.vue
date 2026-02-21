@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onActivated, onMounted, ref } from 'vue'
 import { api, ApiError } from '../../lib/api'
 import { useAuthStore } from '../../stores/auth'
 
@@ -58,6 +58,7 @@ async function decline(appointmentId: number) {
 }
 
 onMounted(load)
+onActivated(load)
 </script>
 
 <template>
