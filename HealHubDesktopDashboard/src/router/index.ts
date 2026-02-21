@@ -95,9 +95,8 @@ export function createAppRouter(pinia: Pinia) {
     const auth = useAuthStore(pinia)
     auth.initFromStorage()
 
-    if (to.path === '/') {
-      return auth.isAuthenticated ? homePathForRole(auth.role) : '/login'
-    }
+    // Let the splash page render; it will handle the timed redirect.
+    if (to.path === '/') return true
 
     const meta = to.matched.find((m) => m.meta && ('requiresAuth' in m.meta || 'role' in m.meta))
       ?.meta as RoleMeta | undefined
