@@ -87,24 +87,37 @@ onMounted(loadPatient)
     <div class="flex items-start justify-between gap-4">
       <div>
         <div class="text-xl font-semibold">Patient alerts</div>
-        <div class="text-sm text-gray-500">Send an alert to this patient</div>
+        <div class="text-sm text-gray-500 dark:text-gray-400">Send an alert to this patient</div>
       </div>
 
       <div class="flex items-center gap-2">
-        <router-link class="rounded border border-gray-300 px-3 py-2 text-sm" to="/admin/patients">Back</router-link>
-        <router-link v-if="patient" class="rounded border border-gray-300 px-3 py-2 text-sm" :to="`/admin/patients/${patient.patient_id}`">
+        <router-link class="rounded border border-gray-300 px-3 py-2 text-sm dark:border-gray-700 dark:text-gray-100" to="/admin/patients">
+          Back
+        </router-link>
+        <router-link
+          v-if="patient"
+          class="rounded border border-gray-300 px-3 py-2 text-sm dark:border-gray-700 dark:text-gray-100"
+          :to="`/admin/patients/${patient.patient_id}`"
+        >
           Patient details
         </router-link>
       </div>
     </div>
 
-    <div v-if="error" class="mt-6 rounded border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{{ error }}</div>
-    <div v-else-if="isLoading" class="mt-6 rounded border border-gray-200 bg-white px-4 py-3 text-sm text-gray-600">Loading…</div>
+    <div v-if="error" class="mt-6 rounded border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-200">
+      {{ error }}
+    </div>
+    <div
+      v-else-if="isLoading"
+      class="mt-6 rounded border border-gray-200 bg-white px-4 py-3 text-sm text-gray-600 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300"
+    >
+      Loading…
+    </div>
 
-    <div v-else class="mt-6 rounded border border-gray-200 bg-white p-4">
+    <div v-else class="mt-6 rounded border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
       <div class="text-sm font-medium">Patient</div>
-      <div class="mt-1 text-sm text-gray-700">
-        <span class="font-medium text-gray-900">{{ patient?.full_name || '-' }}</span>
+      <div class="mt-1 text-sm text-gray-700 dark:text-gray-300">
+        <span class="font-medium text-gray-900 dark:text-gray-100">{{ patient?.full_name || '-' }}</span>
         <span v-if="patient?.email"> · {{ patient?.email }}</span>
         <span v-if="patient?.phone"> · {{ patient?.phone }}</span>
       </div>
@@ -112,18 +125,31 @@ onMounted(loadPatient)
       <div class="mt-6 text-sm font-medium">Create alert</div>
       <form class="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2" @submit.prevent="sendAlert">
         <div class="md:col-span-2">
-          <label class="block text-xs font-medium text-gray-600">Title</label>
-          <input v-model="form.title" class="mt-1 w-full rounded border border-gray-300 px-3 py-2" required />
+          <label class="block text-xs font-medium text-gray-600 dark:text-gray-300">Title</label>
+          <input
+            v-model="form.title"
+            class="mt-1 w-full rounded border border-gray-300 bg-white px-3 py-2 text-gray-900 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100"
+            required
+          />
         </div>
 
         <div class="md:col-span-2">
-          <label class="block text-xs font-medium text-gray-600">Message</label>
-          <textarea v-model="form.message" rows="4" class="mt-1 w-full rounded border border-gray-300 px-3 py-2" required />
+          <label class="block text-xs font-medium text-gray-600 dark:text-gray-300">Message</label>
+          <textarea
+            v-model="form.message"
+            rows="4"
+            class="mt-1 w-full rounded border border-gray-300 bg-white px-3 py-2 text-gray-900 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100"
+            required
+          />
         </div>
 
         <div>
-          <label class="block text-xs font-medium text-gray-600">Type</label>
-          <input v-model="form.type" class="mt-1 w-full rounded border border-gray-300 px-3 py-2" placeholder="Alert" />
+          <label class="block text-xs font-medium text-gray-600 dark:text-gray-300">Type</label>
+          <input
+            v-model="form.type"
+            class="mt-1 w-full rounded border border-gray-300 bg-white px-3 py-2 text-gray-900 placeholder-gray-400 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100 dark:placeholder-gray-500"
+            placeholder="Alert"
+          />
         </div>
 
         <div class="flex items-end">
@@ -132,8 +158,18 @@ onMounted(loadPatient)
           </button>
         </div>
 
-        <div v-if="sendError" class="md:col-span-2 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{{ sendError }}</div>
-        <div v-else-if="sentOk" class="md:col-span-2 rounded border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700">Alert sent.</div>
+        <div
+          v-if="sendError"
+          class="md:col-span-2 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-200"
+        >
+          {{ sendError }}
+        </div>
+        <div
+          v-else-if="sentOk"
+          class="md:col-span-2 rounded border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700 dark:border-green-900 dark:bg-green-950 dark:text-green-200"
+        >
+          Alert sent.
+        </div>
       </form>
     </div>
   </div>

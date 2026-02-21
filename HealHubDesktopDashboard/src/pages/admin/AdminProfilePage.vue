@@ -13,26 +13,26 @@ const phone = computed(() => auth.user?.phone || '-')
 <template>
   <div>
     <div class="text-xl font-semibold">Profile</div>
-    <div class="text-sm text-gray-500">Your account details</div>
+    <div class="text-sm text-gray-500 dark:text-gray-400">Your account details</div>
 
-    <div class="mt-6 rounded border border-gray-200 bg-white">
+    <div class="mt-6 rounded border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
       <div class="grid grid-cols-1 md:grid-cols-2">
-        <div class="border-b border-gray-100 p-4">
-          <div class="text-xs font-medium text-gray-500">Email</div>
-          <div class="mt-1 text-sm text-gray-900">{{ email }}</div>
+        <div class="border-b border-gray-100 p-4 dark:border-gray-800">
+          <div class="text-xs font-medium text-gray-500 dark:text-gray-400">Email</div>
+          <div class="mt-1 text-sm text-gray-900 dark:text-gray-100">{{ email }}</div>
         </div>
-        <div class="border-b border-gray-100 p-4">
-          <div class="text-xs font-medium text-gray-500">Role</div>
-          <div class="mt-1 text-sm text-gray-900">{{ role }}</div>
+        <div class="border-b border-gray-100 p-4 dark:border-gray-800">
+          <div class="text-xs font-medium text-gray-500 dark:text-gray-400">Role</div>
+          <div class="mt-1 text-sm text-gray-900 dark:text-gray-100">{{ role }}</div>
         </div>
 
-        <div class="border-b border-gray-100 p-4">
-          <div class="text-xs font-medium text-gray-500">Full name</div>
-          <div class="mt-1 text-sm text-gray-900">{{ fullName }}</div>
+        <div class="border-b border-gray-100 p-4 dark:border-gray-800">
+          <div class="text-xs font-medium text-gray-500 dark:text-gray-400">Full name</div>
+          <div class="mt-1 text-sm text-gray-900 dark:text-gray-100">{{ fullName }}</div>
         </div>
-        <div class="border-b border-gray-100 p-4">
-          <div class="text-xs font-medium text-gray-500">Phone</div>
-          <div class="mt-1 text-sm text-gray-900">{{ phone }}</div>
+        <div class="border-b border-gray-100 p-4 dark:border-gray-800">
+          <div class="text-xs font-medium text-gray-500 dark:text-gray-400">Phone</div>
+          <div class="mt-1 text-sm text-gray-900 dark:text-gray-100">{{ phone }}</div>
         </div>
       </div>
     </div>

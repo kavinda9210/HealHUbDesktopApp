@@ -176,60 +176,94 @@ onMounted(load)
     <div class="flex items-start justify-between gap-4">
       <div>
         <div class="text-xl font-semibold">Edit doctor</div>
-        <div class="text-sm text-gray-500">Update doctor information</div>
+        <div class="text-sm text-gray-500 dark:text-gray-400">Update doctor information</div>
       </div>
       <div class="flex items-center gap-2">
-        <router-link class="rounded border border-gray-300 px-3 py-2 text-sm" :to="`/admin/doctors/${route.params.doctorId}`">
+        <router-link
+          class="rounded border border-gray-300 px-3 py-2 text-sm dark:border-gray-700 dark:text-gray-100"
+          :to="`/admin/doctors/${route.params.doctorId}`"
+        >
           Cancel
         </router-link>
       </div>
     </div>
 
-    <div v-if="error" class="mt-6 rounded border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+    <div
+      v-if="error"
+      class="mt-6 rounded border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-200"
+    >
       {{ error }}
     </div>
-    <div v-else-if="isLoading" class="mt-6 rounded border border-gray-200 bg-white px-4 py-3 text-sm text-gray-600">
+    <div
+      v-else-if="isLoading"
+      class="mt-6 rounded border border-gray-200 bg-white px-4 py-3 text-sm text-gray-600 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300"
+    >
       Loading…
     </div>
 
-    <form v-else class="mt-6 rounded border border-gray-200 bg-white p-4" @submit.prevent="save">
+    <form v-else class="mt-6 rounded border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900" @submit.prevent="save">
       <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
         <div>
-          <label class="block text-xs font-medium text-gray-600">Email</label>
-          <input v-model="form.email" type="email" class="mt-1 w-full rounded border border-gray-300 px-3 py-2" required />
+          <label class="block text-xs font-medium text-gray-600 dark:text-gray-300">Email</label>
+          <input
+            v-model="form.email"
+            type="email"
+            class="mt-1 w-full rounded border border-gray-300 bg-white px-3 py-2 text-gray-900 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100"
+            required
+          />
         </div>
         <div>
-          <label class="block text-xs font-medium text-gray-600">Phone</label>
-          <input v-model="form.phone" class="mt-1 w-full rounded border border-gray-300 px-3 py-2" required />
+          <label class="block text-xs font-medium text-gray-600 dark:text-gray-300">Phone</label>
+          <input
+            v-model="form.phone"
+            class="mt-1 w-full rounded border border-gray-300 bg-white px-3 py-2 text-gray-900 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100"
+            required
+          />
         </div>
 
         <div>
-          <label class="block text-xs font-medium text-gray-600">Full name</label>
-          <input v-model="form.full_name" class="mt-1 w-full rounded border border-gray-300 px-3 py-2" required />
+          <label class="block text-xs font-medium text-gray-600 dark:text-gray-300">Full name</label>
+          <input
+            v-model="form.full_name"
+            class="mt-1 w-full rounded border border-gray-300 bg-white px-3 py-2 text-gray-900 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100"
+            required
+          />
         </div>
         <div>
-          <label class="block text-xs font-medium text-gray-600">Specialization</label>
-          <input v-model="form.specialization" class="mt-1 w-full rounded border border-gray-300 px-3 py-2" required />
+          <label class="block text-xs font-medium text-gray-600 dark:text-gray-300">Specialization</label>
+          <input
+            v-model="form.specialization"
+            class="mt-1 w-full rounded border border-gray-300 bg-white px-3 py-2 text-gray-900 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100"
+            required
+          />
         </div>
 
         <div>
-          <label class="block text-xs font-medium text-gray-600">Qualification</label>
-          <input v-model="form.qualification" class="mt-1 w-full rounded border border-gray-300 px-3 py-2" />
+          <label class="block text-xs font-medium text-gray-600 dark:text-gray-300">Qualification</label>
+          <input
+            v-model="form.qualification"
+            class="mt-1 w-full rounded border border-gray-300 bg-white px-3 py-2 text-gray-900 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100"
+          />
         </div>
         <div>
-          <label class="block text-xs font-medium text-gray-600">Consultation fee</label>
-          <input v-model="form.consultation_fee" inputmode="decimal" class="mt-1 w-full rounded border border-gray-300 px-3 py-2" placeholder="0" />
+          <label class="block text-xs font-medium text-gray-600 dark:text-gray-300">Consultation fee</label>
+          <input
+            v-model="form.consultation_fee"
+            inputmode="decimal"
+            class="mt-1 w-full rounded border border-gray-300 bg-white px-3 py-2 text-gray-900 placeholder-gray-400 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100 dark:placeholder-gray-500"
+            placeholder="0"
+          />
         </div>
 
         <div class="md:col-span-2 flex items-center gap-2">
           <input id="is_available" v-model="form.is_available" type="checkbox" class="h-4 w-4" />
-          <label for="is_available" class="text-sm text-gray-700">Available</label>
+          <label for="is_available" class="text-sm text-gray-700 dark:text-gray-200">Available</label>
         </div>
 
         <div v-if="form.is_available" class="md:col-span-2">
-          <label class="block text-xs font-medium text-gray-600">Available days</label>
+          <label class="block text-xs font-medium text-gray-600 dark:text-gray-300">Available days</label>
           <div class="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
-            <label v-for="d in daysOfWeek" :key="d" class="flex items-center gap-2 text-sm text-gray-700">
+            <label v-for="d in daysOfWeek" :key="d" class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-200">
               <input v-model="form.available_days" :value="d" type="checkbox" class="h-4 w-4" />
               <span>{{ d }}</span>
             </label>
@@ -237,15 +271,26 @@ onMounted(load)
         </div>
 
         <div v-if="form.is_available">
-          <label class="block text-xs font-medium text-gray-600">Start time</label>
-          <input v-model="form.start_time" type="time" class="mt-1 w-full rounded border border-gray-300 px-3 py-2" />
+          <label class="block text-xs font-medium text-gray-600 dark:text-gray-300">Start time</label>
+          <input
+            v-model="form.start_time"
+            type="time"
+            class="mt-1 w-full rounded border border-gray-300 bg-white px-3 py-2 text-gray-900 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100"
+          />
         </div>
         <div v-if="form.is_available">
-          <label class="block text-xs font-medium text-gray-600">End time</label>
-          <input v-model="form.end_time" type="time" class="mt-1 w-full rounded border border-gray-300 px-3 py-2" />
+          <label class="block text-xs font-medium text-gray-600 dark:text-gray-300">End time</label>
+          <input
+            v-model="form.end_time"
+            type="time"
+            class="mt-1 w-full rounded border border-gray-300 bg-white px-3 py-2 text-gray-900 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100"
+          />
         </div>
 
-        <div v-if="saveError" class="md:col-span-2 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+        <div
+          v-if="saveError"
+          class="md:col-span-2 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-200"
+        >
           {{ saveError }}
         </div>
 

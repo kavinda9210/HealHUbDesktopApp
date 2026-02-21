@@ -124,88 +124,114 @@ onActivated(() => {
     <div class="flex items-start justify-between gap-4">
       <div>
         <div class="text-xl font-semibold">Patient details</div>
-        <div class="text-sm text-gray-500">View patient profile information</div>
+        <div class="text-sm text-gray-500 dark:text-gray-400">View patient profile information</div>
       </div>
 
       <div class="flex items-center gap-2">
-        <router-link class="rounded border border-gray-300 px-3 py-2 text-sm" to="/admin/patients">Back</router-link>
-        <router-link v-if="row" class="rounded border border-gray-300 px-3 py-2 text-sm" :to="`/admin/patients/${row.patient_id}/edit`">
+        <router-link class="rounded border border-gray-300 px-3 py-2 text-sm dark:border-gray-700 dark:text-gray-100" to="/admin/patients">
+          Back
+        </router-link>
+        <router-link
+          v-if="row"
+          class="rounded border border-gray-300 px-3 py-2 text-sm dark:border-gray-700 dark:text-gray-100"
+          :to="`/admin/patients/${row.patient_id}/edit`"
+        >
           Edit
         </router-link>
-        <router-link v-if="row" class="rounded border border-gray-300 px-3 py-2 text-sm" :to="`/admin/patients/${row.patient_id}/alerts`">
+        <router-link
+          v-if="row"
+          class="rounded border border-gray-300 px-3 py-2 text-sm dark:border-gray-700 dark:text-gray-100"
+          :to="`/admin/patients/${row.patient_id}/alerts`"
+        >
           Alerts
         </router-link>
         <button v-if="row" class="rounded bg-gray-900 px-3 py-2 text-sm text-white" @click="deletePatient">Delete</button>
       </div>
     </div>
 
-    <div v-if="success" class="mt-6 rounded border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
+    <div
+      v-if="success"
+      class="mt-6 rounded border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700 dark:border-green-900 dark:bg-green-950 dark:text-green-200"
+    >
       {{ success }}
     </div>
-    <div v-if="actionError" class="mt-6 rounded border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+    <div
+      v-if="actionError"
+      class="mt-6 rounded border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-200"
+    >
       {{ actionError }}
     </div>
 
-    <div v-if="error" class="mt-6 rounded border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+    <div
+      v-if="error"
+      class="mt-6 rounded border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-200"
+    >
       {{ error }}
     </div>
-    <div v-else-if="isLoading && !row" class="mt-6 rounded border border-gray-200 bg-white px-4 py-3 text-sm text-gray-600">Loading…</div>
+    <div
+      v-else-if="isLoading && !row"
+      class="mt-6 rounded border border-gray-200 bg-white px-4 py-3 text-sm text-gray-600 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300"
+    >
+      Loading…
+    </div>
 
-    <div v-else-if="row" class="mt-6 rounded border border-gray-200 bg-white">
-      <div v-if="isLoading" class="border-b border-gray-100 px-4 py-2 text-xs text-gray-500">Refreshing…</div>
+    <div v-else-if="row" class="mt-6 rounded border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
+      <div v-if="isLoading" class="border-b border-gray-100 px-4 py-2 text-xs text-gray-500 dark:border-gray-800 dark:text-gray-400">Refreshing…</div>
       <div class="grid grid-cols-1 gap-0 md:grid-cols-2">
-        <div class="border-b border-gray-100 p-4">
-          <div class="text-xs font-medium text-gray-500">Full name</div>
-          <div class="mt-1 text-sm text-gray-900">{{ row.full_name || '-' }}</div>
+        <div class="border-b border-gray-100 p-4 dark:border-gray-800">
+          <div class="text-xs font-medium text-gray-500 dark:text-gray-400">Full name</div>
+          <div class="mt-1 text-sm text-gray-900 dark:text-gray-100">{{ row.full_name || '-' }}</div>
         </div>
-        <div class="border-b border-gray-100 p-4">
-          <div class="text-xs font-medium text-gray-500">Email</div>
-          <div class="mt-1 text-sm text-gray-900">{{ row.email || '-' }}</div>
-        </div>
-
-        <div class="border-b border-gray-100 p-4">
-          <div class="text-xs font-medium text-gray-500">Phone</div>
-          <div class="mt-1 text-sm text-gray-900">{{ row.phone || '-' }}</div>
-        </div>
-        <div class="border-b border-gray-100 p-4">
-          <div class="text-xs font-medium text-gray-500">DOB</div>
-          <div class="mt-1 text-sm text-gray-900">{{ row.dob || '-' }}</div>
+        <div class="border-b border-gray-100 p-4 dark:border-gray-800">
+          <div class="text-xs font-medium text-gray-500 dark:text-gray-400">Email</div>
+          <div class="mt-1 text-sm text-gray-900 dark:text-gray-100">{{ row.email || '-' }}</div>
         </div>
 
-        <div class="border-b border-gray-100 p-4">
-          <div class="text-xs font-medium text-gray-500">Gender</div>
-          <div class="mt-1 text-sm text-gray-900">{{ row.gender || '-' }}</div>
+        <div class="border-b border-gray-100 p-4 dark:border-gray-800">
+          <div class="text-xs font-medium text-gray-500 dark:text-gray-400">Phone</div>
+          <div class="mt-1 text-sm text-gray-900 dark:text-gray-100">{{ row.phone || '-' }}</div>
         </div>
-        <div class="border-b border-gray-100 p-4">
-          <div class="text-xs font-medium text-gray-500">Address</div>
-          <div class="mt-1 text-sm text-gray-900">{{ row.address || '-' }}</div>
-        </div>
-
-        <div class="border-b border-gray-100 p-4">
-          <div class="text-xs font-medium text-gray-500">Blood group</div>
-          <div class="mt-1 text-sm text-gray-900">{{ row.blood_group || '-' }}</div>
-        </div>
-        <div class="border-b border-gray-100 p-4">
-          <div class="text-xs font-medium text-gray-500">Emergency contact</div>
-          <div class="mt-1 text-sm text-gray-900">{{ row.emergency_contact || '-' }}</div>
+        <div class="border-b border-gray-100 p-4 dark:border-gray-800">
+          <div class="text-xs font-medium text-gray-500 dark:text-gray-400">DOB</div>
+          <div class="mt-1 text-sm text-gray-900 dark:text-gray-100">{{ row.dob || '-' }}</div>
         </div>
 
-        <div class="border-b border-gray-100 p-4">
-          <div class="text-xs font-medium text-gray-500">Chronic condition</div>
-          <div class="mt-1 text-sm text-gray-900">{{ row.has_chronic_condition ? 'Yes' : 'No' }}</div>
+        <div class="border-b border-gray-100 p-4 dark:border-gray-800">
+          <div class="text-xs font-medium text-gray-500 dark:text-gray-400">Gender</div>
+          <div class="mt-1 text-sm text-gray-900 dark:text-gray-100">{{ row.gender || '-' }}</div>
         </div>
-        <div class="border-b border-gray-100 p-4">
-          <div class="text-xs font-medium text-gray-500">Created</div>
-          <div class="mt-1 text-sm text-gray-900">{{ row.created_at || '-' }}</div>
+        <div class="border-b border-gray-100 p-4 dark:border-gray-800">
+          <div class="text-xs font-medium text-gray-500 dark:text-gray-400">Address</div>
+          <div class="mt-1 text-sm text-gray-900 dark:text-gray-100">{{ row.address || '-' }}</div>
         </div>
 
-        <div class="border-b border-gray-100 p-4 md:col-span-2">
-          <div class="text-xs font-medium text-gray-500">Condition notes</div>
-          <div class="mt-1 text-sm text-gray-900 whitespace-pre-wrap">{{ row.condition_notes || '-' }}</div>
+        <div class="border-b border-gray-100 p-4 dark:border-gray-800">
+          <div class="text-xs font-medium text-gray-500 dark:text-gray-400">Blood group</div>
+          <div class="mt-1 text-sm text-gray-900 dark:text-gray-100">{{ row.blood_group || '-' }}</div>
+        </div>
+        <div class="border-b border-gray-100 p-4 dark:border-gray-800">
+          <div class="text-xs font-medium text-gray-500 dark:text-gray-400">Emergency contact</div>
+          <div class="mt-1 text-sm text-gray-900 dark:text-gray-100">{{ row.emergency_contact || '-' }}</div>
+        </div>
+
+        <div class="border-b border-gray-100 p-4 dark:border-gray-800">
+          <div class="text-xs font-medium text-gray-500 dark:text-gray-400">Chronic condition</div>
+          <div class="mt-1 text-sm text-gray-900 dark:text-gray-100">{{ row.has_chronic_condition ? 'Yes' : 'No' }}</div>
+        </div>
+        <div class="border-b border-gray-100 p-4 dark:border-gray-800">
+          <div class="text-xs font-medium text-gray-500 dark:text-gray-400">Created</div>
+          <div class="mt-1 text-sm text-gray-900 dark:text-gray-100">{{ row.created_at || '-' }}</div>
+        </div>
+
+        <div class="border-b border-gray-100 p-4 md:col-span-2 dark:border-gray-800">
+          <div class="text-xs font-medium text-gray-500 dark:text-gray-400">Condition notes</div>
+          <div class="mt-1 text-sm text-gray-900 whitespace-pre-wrap dark:text-gray-100">{{ row.condition_notes || '-' }}</div>
         </div>
       </div>
     </div>
 
-    <div v-else class="mt-6 rounded border border-gray-200 bg-white px-4 py-3 text-sm text-gray-600">Patient not found.</div>
+    <div v-else class="mt-6 rounded border border-gray-200 bg-white px-4 py-3 text-sm text-gray-600 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300">
+      Patient not found.
+    </div>
   </div>
 </template>

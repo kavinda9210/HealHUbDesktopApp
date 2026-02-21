@@ -57,72 +57,120 @@ async function createPatient() {
     <div class="flex items-start justify-between gap-4">
       <div>
         <div class="text-xl font-semibold">Create patient</div>
-        <div class="text-sm text-gray-500">Add a new patient account</div>
+        <div class="text-sm text-gray-500 dark:text-gray-400">Add a new patient account</div>
       </div>
       <div class="flex items-center gap-2">
-        <router-link class="rounded border border-gray-300 px-3 py-2 text-sm" to="/admin/patients">Back to list</router-link>
+        <router-link
+          class="rounded border border-gray-300 px-3 py-2 text-sm dark:border-gray-700 dark:text-gray-100"
+          to="/admin/patients"
+        >
+          Back to list
+        </router-link>
       </div>
     </div>
 
-    <div class="mt-6 rounded border border-gray-200 bg-white p-4">
+    <div class="mt-6 rounded border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
       <form class="grid grid-cols-1 gap-3 md:grid-cols-2" @submit.prevent="createPatient">
         <div>
-          <label class="block text-xs font-medium text-gray-600">Email</label>
-          <input v-model="form.email" type="email" class="mt-1 w-full rounded border border-gray-300 px-3 py-2" required />
+          <label class="block text-xs font-medium text-gray-600 dark:text-gray-300">Email</label>
+          <input
+            v-model="form.email"
+            type="email"
+            class="mt-1 w-full rounded border border-gray-300 bg-white px-3 py-2 text-gray-900 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100"
+            required
+          />
         </div>
         <div>
-          <label class="block text-xs font-medium text-gray-600">Password</label>
-          <input v-model="form.password" type="password" class="mt-1 w-full rounded border border-gray-300 px-3 py-2" required />
+          <label class="block text-xs font-medium text-gray-600 dark:text-gray-300">Password</label>
+          <input
+            v-model="form.password"
+            type="password"
+            class="mt-1 w-full rounded border border-gray-300 bg-white px-3 py-2 text-gray-900 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100"
+            required
+          />
         </div>
 
         <div>
-          <label class="block text-xs font-medium text-gray-600">Full name</label>
-          <input v-model="form.full_name" class="mt-1 w-full rounded border border-gray-300 px-3 py-2" required />
+          <label class="block text-xs font-medium text-gray-600 dark:text-gray-300">Full name</label>
+          <input
+            v-model="form.full_name"
+            class="mt-1 w-full rounded border border-gray-300 bg-white px-3 py-2 text-gray-900 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100"
+            required
+          />
         </div>
         <div>
-          <label class="block text-xs font-medium text-gray-600">Phone</label>
-          <input v-model="form.phone" class="mt-1 w-full rounded border border-gray-300 px-3 py-2" required />
+          <label class="block text-xs font-medium text-gray-600 dark:text-gray-300">Phone</label>
+          <input
+            v-model="form.phone"
+            class="mt-1 w-full rounded border border-gray-300 bg-white px-3 py-2 text-gray-900 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100"
+            required
+          />
         </div>
 
         <div>
-          <label class="block text-xs font-medium text-gray-600">DOB</label>
-          <input v-model="form.dob" type="date" class="mt-1 w-full rounded border border-gray-300 px-3 py-2" required />
+          <label class="block text-xs font-medium text-gray-600 dark:text-gray-300">DOB</label>
+          <input
+            v-model="form.dob"
+            type="date"
+            class="mt-1 w-full rounded border border-gray-300 bg-white px-3 py-2 text-gray-900 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100"
+            required
+          />
         </div>
         <div>
-          <label class="block text-xs font-medium text-gray-600">Gender</label>
-          <input v-model="form.gender" class="mt-1 w-full rounded border border-gray-300 px-3 py-2" placeholder="e.g. Male" required />
+          <label class="block text-xs font-medium text-gray-600 dark:text-gray-300">Gender</label>
+          <input
+            v-model="form.gender"
+            class="mt-1 w-full rounded border border-gray-300 bg-white px-3 py-2 text-gray-900 placeholder-gray-400 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100 dark:placeholder-gray-500"
+            placeholder="e.g. Male"
+            required
+          />
         </div>
 
         <div class="md:col-span-2">
-          <label class="block text-xs font-medium text-gray-600">Address</label>
-          <input v-model="form.address" class="mt-1 w-full rounded border border-gray-300 px-3 py-2" required />
+          <label class="block text-xs font-medium text-gray-600 dark:text-gray-300">Address</label>
+          <input
+            v-model="form.address"
+            class="mt-1 w-full rounded border border-gray-300 bg-white px-3 py-2 text-gray-900 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100"
+            required
+          />
         </div>
 
         <div>
-          <label class="block text-xs font-medium text-gray-600">Blood group</label>
-          <input v-model="form.blood_group" class="mt-1 w-full rounded border border-gray-300 px-3 py-2" placeholder="Optional" />
+          <label class="block text-xs font-medium text-gray-600 dark:text-gray-300">Blood group</label>
+          <input
+            v-model="form.blood_group"
+            class="mt-1 w-full rounded border border-gray-300 bg-white px-3 py-2 text-gray-900 placeholder-gray-400 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100 dark:placeholder-gray-500"
+            placeholder="Optional"
+          />
         </div>
         <div>
-          <label class="block text-xs font-medium text-gray-600">Emergency contact</label>
-          <input v-model="form.emergency_contact" class="mt-1 w-full rounded border border-gray-300 px-3 py-2" placeholder="Optional" />
-        </div>
-
-        <div class="md:col-span-2 flex items-center gap-2">
-          <input id="has_chronic_condition" v-model="form.has_chronic_condition" type="checkbox" class="h-4 w-4" />
-          <label for="has_chronic_condition" class="text-sm text-gray-700">Has chronic condition</label>
-        </div>
-
-        <div class="md:col-span-2">
-          <label class="block text-xs font-medium text-gray-600">Condition notes</label>
-          <textarea
-            v-model="form.condition_notes"
-            rows="3"
-            class="mt-1 w-full rounded border border-gray-300 px-3 py-2"
+          <label class="block text-xs font-medium text-gray-600 dark:text-gray-300">Emergency contact</label>
+          <input
+            v-model="form.emergency_contact"
+            class="mt-1 w-full rounded border border-gray-300 bg-white px-3 py-2 text-gray-900 placeholder-gray-400 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100 dark:placeholder-gray-500"
             placeholder="Optional"
           />
         </div>
 
-        <div v-if="createError" class="md:col-span-2 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+        <div class="md:col-span-2 flex items-center gap-2">
+          <input id="has_chronic_condition" v-model="form.has_chronic_condition" type="checkbox" class="h-4 w-4" />
+          <label for="has_chronic_condition" class="text-sm text-gray-700 dark:text-gray-200">Has chronic condition</label>
+        </div>
+
+        <div class="md:col-span-2">
+          <label class="block text-xs font-medium text-gray-600 dark:text-gray-300">Condition notes</label>
+          <textarea
+            v-model="form.condition_notes"
+            rows="3"
+            class="mt-1 w-full rounded border border-gray-300 bg-white px-3 py-2 text-gray-900 placeholder-gray-400 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100 dark:placeholder-gray-500"
+            placeholder="Optional"
+          />
+        </div>
+
+        <div
+          v-if="createError"
+          class="md:col-span-2 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-200"
+        >
           {{ createError }}
         </div>
 

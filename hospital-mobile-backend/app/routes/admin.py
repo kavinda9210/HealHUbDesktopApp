@@ -1,15 +1,57 @@
 import logging
-from datetime import date
+from datetime import date, timedelta
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
 
 from app.utils.supabase_client import SupabaseClient, get_user_by_id, get_user_by_email
 from app.utils.security import hash_password
-from app.utils.time_utils import sl_now_iso
+from app.utils.time_utils import sl_now, sl_now_iso
 
 logger = logging.getLogger(__name__)
 
 admin_bp = Blueprint('admin', __name__)
+
+
+@admin_bp.route('/dashboard-stats', methods=['GET'])
+@jwt_required()
+def admin_dashboard_stats():
+    """Lightweight stats for the admin dashboard."""
+    try:
+        current_user_id = get_jwt_identity()
+        _, err = _require_admin(current_user_id)
+        if err:
+            return err
+
+        doctors = SupabaseClient.execute_admin_query('doctors', 'select', columns='doctor_id')
+        patients = SupabaseClient.execute_admin_query('patients', 'select', columns='patient_id')
+        ambulances = SupabaseClient.execute_admin_query('ambulances', 'select', columns='ambulance_id')
+
+        since_dt = sl_now() - timedelta(days=7)
+        since_iso = since_dt.isoformat(timespec='seconds')
+        new_users = SupabaseClient.execute_admin_query(
+            'users',
+            'select',
+            columns='user_id',
+            filters=[('created_at', 'gte', since_iso)],
+        )
+
+        if not doctors.get('success') or not patients.get('success') or not ambulances.get('success') or not new_users.get('success'):
+            return jsonify({'success': False, 'message': 'Failed to load dashboard stats'}), 500
+
+        return jsonify({
+            'success': True,
+            'data': {
+                'doctors': doctors.get('count', 0),
+                'patients': patients.get('count', 0),
+                'ambulances': ambulances.get('count', 0),
+                'new_users': new_users.get('count', 0),
+                'new_users_since': since_iso,
+                'as_of': sl_now_iso(),
+            }
+        }), 200
+    except Exception as e:
+        logger.error(f"Admin dashboard stats error: {e}")
+        return jsonify({'success': False, 'message': 'Failed to load dashboard stats', 'error': str(e)}), 500
 
 
 def _require_admin(user_id: str):

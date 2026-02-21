@@ -43,34 +43,38 @@ onActivated(load)
     <div class="flex items-center justify-between">
       <div>
         <div class="text-xl font-semibold">Notifications</div>
-        <div class="text-sm text-gray-500">Latest notifications for your account</div>
+        <div class="text-sm text-gray-500 dark:text-gray-400">Latest notifications for your account</div>
       </div>
-      <button class="rounded border border-gray-300 px-3 py-1.5 text-sm" @click="load" :disabled="isLoading">
+      <button
+        class="rounded border border-gray-300 px-3 py-1.5 text-sm dark:border-gray-700 dark:text-gray-100"
+        @click="load"
+        :disabled="isLoading"
+      >
         Refresh
       </button>
     </div>
 
-    <div class="mt-6 rounded border border-gray-200 bg-white">
-      <div v-if="error" class="px-4 py-3 text-sm text-red-700">{{ error }}</div>
-      <div v-else-if="isLoading" class="px-4 py-3 text-sm text-gray-600">Loading…</div>
+    <div class="mt-6 rounded border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
+      <div v-if="error" class="px-4 py-3 text-sm text-red-700 dark:text-red-200">{{ error }}</div>
+      <div v-else-if="isLoading" class="px-4 py-3 text-sm text-gray-600 dark:text-gray-300">Loading…</div>
 
-      <div class="divide-y divide-gray-100">
+      <div class="divide-y divide-gray-100 dark:divide-gray-800">
         <div v-for="n in rows" :key="n.notification_id || n.created_at" class="px-4 py-3">
           <div class="flex items-start justify-between gap-4">
             <div>
-              <div class="text-sm font-medium text-gray-900">{{ n.title || 'Notification' }}</div>
-              <div class="mt-1 text-sm text-gray-700">{{ n.message || '-' }}</div>
-              <div class="mt-2 text-xs text-gray-500">
+              <div class="text-sm font-medium text-gray-900 dark:text-gray-100">{{ n.title || 'Notification' }}</div>
+              <div class="mt-1 text-sm text-gray-700 dark:text-gray-300">{{ n.message || '-' }}</div>
+              <div class="mt-2 text-xs text-gray-500 dark:text-gray-400">
                 <span v-if="n.type">{{ n.type }}</span>
                 <span v-if="n.type && n.created_at"> · </span>
                 <span v-if="n.created_at">{{ n.created_at }}</span>
               </div>
             </div>
-            <div class="text-xs text-gray-500">{{ n.is_read ? 'Read' : 'Unread' }}</div>
+            <div class="text-xs text-gray-500 dark:text-gray-400">{{ n.is_read ? 'Read' : 'Unread' }}</div>
           </div>
         </div>
 
-        <div v-if="!isLoading && rows.length === 0" class="px-4 py-4 text-sm text-gray-600">
+        <div v-if="!isLoading && rows.length === 0" class="px-4 py-4 text-sm text-gray-600 dark:text-gray-300">
           No notifications.
         </div>
       </div>
