@@ -772,13 +772,22 @@ def admin_update_ambulance(ambulance_id: int):
                 return jsonify({'success': False, 'message': 'Failed to update ambulance'}), 500
 
         new_email = (data.get('email') or '').strip().lower() if 'email' in data else None
-        if new_email and user_id:
-            existing = get_user_by_email(new_email)
-            if existing and existing.get('user_id') != user_id:
-                return jsonify({'success': False, 'message': 'Email already in use'}), 409
-            upd_user = SupabaseClient.execute_admin_query('users', 'update', filter_user_id=user_id, email=new_email)
-            if not upd_user.get('success'):
-                return jsonify({'success': False, 'message': 'Failed to update email'}), 500
+        if new_email is not None:
+            if not new_email:
+                return jsonify({'success': False, 'message': 'Email cannot be empty'}), 400
+            if not user_id:
+                return jsonify({'success': False, 'message': 'Ambulance user not found'}), 400
+
+            current_email = (amb.get('email') or '').strip().lower()
+            if new_email != current_email:
+                existing = _admin_get_user_by_email(new_email)
+                if existing and existing.get('user_id') != user_id:
+                    return jsonify({'success': False, 'message': 'Email already in use'}), 409
+                upd_user = SupabaseClient.execute_admin_query('users', 'update', filter_user_id=user_id, email=new_email)
+                if not upd_user.get('success'):
+                    return jsonify({'success': False, 'message': 'Failed to update email'}), 500
+                if not upd_user.get('data'):
+                    return jsonify({'success': False, 'message': 'Failed to update email (no rows updated)'}), 500
 
         return jsonify({'success': True, 'message': 'Ambulance updated'}), 200
 
@@ -814,3 +823,51 @@ def admin_delete_ambulance(ambulance_id: int):
     except Exception as e:
         logger.error(f"Admin delete ambulance error: {e}")
         return jsonify({'success': False, 'message': 'Failed to delete ambulance', 'error': str(e)}), 500
+
+
+@admin_bp.route('/ambulances/<int:ambulance_id>/alerts', methods=['POST'])
+@jwt_required()
+def admin_create_ambulance_alert(ambulance_id: int):
+    """Create an alert (notification) for a specific ambulance staff user."""
+    try:
+        current_user_id = get_jwt_identity()
+        _, err = _require_admin(current_user_id)
+        if err:
+            return err
+
+        data = request.get_json() or {}
+        title = (data.get('title') or '').strip()
+        message = (data.get('message') or '').strip()
+        ntype = (data.get('type') or 'Alert').strip() or 'Alert'
+
+        if not title or not message:
+            return jsonify({'success': False, 'message': 'title and message are required'}), 400
+
+        amb_result = SupabaseClient.execute_admin_query('ambulances', 'select', filter_ambulance_id=ambulance_id)
+        if not amb_result.get('success') or not amb_result.get('data'):
+            return jsonify({'success': False, 'message': 'Ambulance not found'}), 404
+
+        amb = amb_result['data'][0]
+        target_user_id = amb.get('user_id')
+        if not target_user_id:
+            return jsonify({'success': False, 'message': 'Ambulance user not found'}), 404
+
+        ins = SupabaseClient.execute_admin_query(
+            'notifications',
+            'insert',
+            user_id=target_user_id,
+            title=title,
+            message=message,
+            type=ntype,
+            is_read=False,
+            created_at=sl_now_iso(),
+        )
+
+        if not ins.get('success'):
+            return jsonify({'success': False, 'message': 'Failed to create alert'}), 500
+
+        return jsonify({'success': True, 'message': 'Alert created', 'data': (ins.get('data') or [None])[0]}), 201
+
+    except Exception as e:
+        logger.error(f"Admin create ambulance alert error: {e}")
+        return jsonify({'success': False, 'message': 'Failed to create alert', 'error': str(e)}), 500

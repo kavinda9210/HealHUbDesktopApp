@@ -11,12 +11,14 @@ const displayName = computed(() => auth.user?.full_name || auth.user?.email || '
 
 const isDoctorsOpen = ref(route.path.startsWith('/admin/doctors'))
 const isPatientsOpen = ref(route.path.startsWith('/admin/patients'))
+const isAmbulancesOpen = ref(route.path.startsWith('/admin/ambulances'))
 
 watch(
   () => route.path,
   (path) => {
     if (path.startsWith('/admin/doctors')) isDoctorsOpen.value = true
     if (path.startsWith('/admin/patients')) isPatientsOpen.value = true
+    if (path.startsWith('/admin/ambulances')) isAmbulancesOpen.value = true
   },
 )
 
@@ -26,6 +28,10 @@ function toggleDoctors() {
 
 function togglePatients() {
   isPatientsOpen.value = !isPatientsOpen.value
+}
+
+function toggleAmbulances() {
+  isAmbulancesOpen.value = !isAmbulancesOpen.value
 }
 
 function logout() {
@@ -62,7 +68,16 @@ function logout() {
         </button>
         <router-link v-if="isPatientsOpen" class="block rounded px-3 py-2 pl-6 hover:bg-gray-100" to="/admin/patients">Manage patients</router-link>
         <router-link v-if="isPatientsOpen" class="block rounded px-3 py-2 pl-6 hover:bg-gray-100" to="/admin/patients/create">Create patient</router-link>
-        <router-link class="block rounded px-3 py-2 hover:bg-gray-100" to="/admin/ambulances">Ambulances</router-link>
+        <button
+          type="button"
+          class="w-full rounded px-3 py-2 text-left text-xs font-medium text-gray-500 hover:bg-gray-100"
+          :aria-expanded="isAmbulancesOpen"
+          @click="toggleAmbulances"
+        >
+          Ambulances
+        </button>
+        <router-link v-if="isAmbulancesOpen" class="block rounded px-3 py-2 pl-6 hover:bg-gray-100" to="/admin/ambulances">Manage ambulance staff</router-link>
+        <router-link v-if="isAmbulancesOpen" class="block rounded px-3 py-2 pl-6 hover:bg-gray-100" to="/admin/ambulances/create">Create ambulance staff</router-link>
         <router-link class="block rounded px-3 py-2 hover:bg-gray-100" to="/admin/notifications">Notifications</router-link>
       </nav>
     </aside>
