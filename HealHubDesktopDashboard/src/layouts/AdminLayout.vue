@@ -10,16 +10,22 @@ const router = useRouter()
 const displayName = computed(() => auth.user?.full_name || auth.user?.email || 'Admin')
 
 const isDoctorsOpen = ref(route.path.startsWith('/admin/doctors'))
+const isPatientsOpen = ref(route.path.startsWith('/admin/patients'))
 
 watch(
   () => route.path,
   (path) => {
     if (path.startsWith('/admin/doctors')) isDoctorsOpen.value = true
+    if (path.startsWith('/admin/patients')) isPatientsOpen.value = true
   },
 )
 
 function toggleDoctors() {
   isDoctorsOpen.value = !isDoctorsOpen.value
+}
+
+function togglePatients() {
+  isPatientsOpen.value = !isPatientsOpen.value
 }
 
 function logout() {
@@ -46,7 +52,16 @@ function logout() {
         </button>
         <router-link v-if="isDoctorsOpen" class="block rounded px-3 py-2 pl-6 hover:bg-gray-100" to="/admin/doctors">Manage doctors</router-link>
         <router-link v-if="isDoctorsOpen" class="block rounded px-3 py-2 pl-6 hover:bg-gray-100" to="/admin/doctors/create">Create doctor</router-link>
-        <router-link class="block rounded px-3 py-2 hover:bg-gray-100" to="/admin/patients">Patients</router-link>
+        <button
+          type="button"
+          class="w-full rounded px-3 py-2 text-left text-xs font-medium text-gray-500 hover:bg-gray-100"
+          :aria-expanded="isPatientsOpen"
+          @click="togglePatients"
+        >
+          Patients
+        </button>
+        <router-link v-if="isPatientsOpen" class="block rounded px-3 py-2 pl-6 hover:bg-gray-100" to="/admin/patients">Manage patients</router-link>
+        <router-link v-if="isPatientsOpen" class="block rounded px-3 py-2 pl-6 hover:bg-gray-100" to="/admin/patients/create">Create patient</router-link>
         <router-link class="block rounded px-3 py-2 hover:bg-gray-100" to="/admin/ambulances">Ambulances</router-link>
         <router-link class="block rounded px-3 py-2 hover:bg-gray-100" to="/admin/notifications">Notifications</router-link>
       </nav>

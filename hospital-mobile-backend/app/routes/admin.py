@@ -536,13 +536,22 @@ def admin_update_patient(patient_id: int):
                 return jsonify({'success': False, 'message': 'Failed to update patient'}), 500
 
         new_email = (data.get('email') or '').strip().lower() if 'email' in data else None
-        if new_email and user_id:
-            existing = get_user_by_email(new_email)
-            if existing and existing.get('user_id') != user_id:
-                return jsonify({'success': False, 'message': 'Email already in use'}), 409
-            upd_user = SupabaseClient.execute_admin_query('users', 'update', filter_user_id=user_id, email=new_email)
-            if not upd_user.get('success'):
-                return jsonify({'success': False, 'message': 'Failed to update email'}), 500
+        if new_email is not None:
+            if not new_email:
+                return jsonify({'success': False, 'message': 'Email cannot be empty'}), 400
+            if not user_id:
+                return jsonify({'success': False, 'message': 'Patient user not found'}), 400
+
+            current_email = (patient.get('email') or '').strip().lower()
+            if new_email != current_email:
+                existing = _admin_get_user_by_email(new_email)
+                if existing and existing.get('user_id') != user_id:
+                    return jsonify({'success': False, 'message': 'Email already in use'}), 409
+                upd_user = SupabaseClient.execute_admin_query('users', 'update', filter_user_id=user_id, email=new_email)
+                if not upd_user.get('success'):
+                    return jsonify({'success': False, 'message': 'Failed to update email'}), 500
+                if not upd_user.get('data'):
+                    return jsonify({'success': False, 'message': 'Failed to update email (no rows updated)'}), 500
 
         return jsonify({'success': True, 'message': 'Patient updated'}), 200
 
@@ -578,6 +587,54 @@ def admin_delete_patient(patient_id: int):
     except Exception as e:
         logger.error(f"Admin delete patient error: {e}")
         return jsonify({'success': False, 'message': 'Failed to delete patient', 'error': str(e)}), 500
+
+
+@admin_bp.route('/patients/<int:patient_id>/alerts', methods=['POST'])
+@jwt_required()
+def admin_create_patient_alert(patient_id: int):
+    """Create an alert (notification) for a specific patient."""
+    try:
+        current_user_id = get_jwt_identity()
+        _, err = _require_admin(current_user_id)
+        if err:
+            return err
+
+        data = request.get_json() or {}
+        title = (data.get('title') or '').strip()
+        message = (data.get('message') or '').strip()
+        ntype = (data.get('type') or 'Alert').strip() or 'Alert'
+
+        if not title or not message:
+            return jsonify({'success': False, 'message': 'title and message are required'}), 400
+
+        patient_result = SupabaseClient.execute_admin_query('patients', 'select', filter_patient_id=patient_id)
+        if not patient_result.get('success') or not patient_result.get('data'):
+            return jsonify({'success': False, 'message': 'Patient not found'}), 404
+
+        patient = patient_result['data'][0]
+        patient_user_id = patient.get('user_id')
+        if not patient_user_id:
+            return jsonify({'success': False, 'message': 'Patient user not found'}), 404
+
+        ins = SupabaseClient.execute_admin_query(
+            'notifications',
+            'insert',
+            user_id=patient_user_id,
+            title=title,
+            message=message,
+            type=ntype,
+            is_read=False,
+            created_at=sl_now_iso(),
+        )
+
+        if not ins.get('success'):
+            return jsonify({'success': False, 'message': 'Failed to create alert'}), 500
+
+        return jsonify({'success': True, 'message': 'Alert created', 'data': (ins.get('data') or [None])[0]}), 201
+
+    except Exception as e:
+        logger.error(f"Admin create patient alert error: {e}")
+        return jsonify({'success': False, 'message': 'Failed to create alert', 'error': str(e)}), 500
 
 
 # -----------------

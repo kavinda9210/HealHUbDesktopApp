@@ -18,6 +18,10 @@ import AdminDoctorViewPage from '../pages/admin/AdminDoctorViewPage.vue'
 import AdminDoctorEditPage from '../pages/admin/AdminDoctorEditPage.vue'
 import AdminDoctorAlertsPage from '../pages/admin/AdminDoctorAlertsPage.vue'
 import AdminPatientsPage from '../pages/admin/AdminPatientsPage.vue'
+import AdminPatientCreatePage from '../pages/admin/AdminPatientCreatePage.vue'
+import AdminPatientViewPage from '../pages/admin/AdminPatientViewPage.vue'
+import AdminPatientEditPage from '../pages/admin/AdminPatientEditPage.vue'
+import AdminPatientAlertsPage from '../pages/admin/AdminPatientAlertsPage.vue'
 import AdminAmbulancesPage from '../pages/admin/AdminAmbulancesPage.vue'
 import AdminNotificationsPage from '../pages/shared/NotificationsPage.vue'
 
@@ -48,6 +52,10 @@ export function createAppRouter(pinia: Pinia) {
         { path: 'doctors/:doctorId/edit', component: AdminDoctorEditPage },
         { path: 'doctors/:doctorId/alerts', component: AdminDoctorAlertsPage },
         { path: 'patients', component: AdminPatientsPage },
+        { path: 'patients/create', component: AdminPatientCreatePage },
+        { path: 'patients/:patientId', component: AdminPatientViewPage },
+        { path: 'patients/:patientId/edit', component: AdminPatientEditPage },
+        { path: 'patients/:patientId/alerts', component: AdminPatientAlertsPage },
         { path: 'ambulances', component: AdminAmbulancesPage },
         { path: 'notifications', component: AdminNotificationsPage },
         { path: '', redirect: '/admin/dashboard' },
