@@ -4,7 +4,7 @@
     "slug": "HealHubMobileApp",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/HealHub_icon.png",
     "userInterfaceStyle": "light",
     "assetBundlePatterns": [
       "**/*"
@@ -18,7 +18,7 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
+        "foregroundImage": "./assets/HealHub_icon.png",
         "backgroundColor": "#ffffff"
       },
       "package": "com.kavinda1234.HealHubMobileApp",
