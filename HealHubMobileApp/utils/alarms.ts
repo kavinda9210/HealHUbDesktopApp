@@ -209,6 +209,12 @@ export async function cancelAllAlarmsAsync() {
   await Notifications.cancelAllScheduledNotificationsAsync();
 }
 
+export async function cancelAlarmAsync(id: string) {
+  requireDevBuild('Canceling alarms');
+  if (!id) return;
+  await Notifications.cancelScheduledNotificationAsync(String(id));
+}
+
 export async function listScheduledAlarmsAsync() {
   requireDevBuild('Listing alarms');
   return await Notifications.getAllScheduledNotificationsAsync();

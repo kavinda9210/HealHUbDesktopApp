@@ -32,6 +32,18 @@ import AdminNotificationsPage from '../pages/shared/NotificationsPage.vue'
 import DoctorDashboardPage from '../pages/doctor/DoctorDashboardPage.vue'
 import DoctorAppointmentsPage from '../pages/doctor/DoctorAppointmentsPage.vue'
 import DoctorProfilePage from '../pages/doctor/DoctorProfilePage.vue'
+import DoctorPatientsPage from '../pages/doctor/DoctorPatientsPage.vue'
+import DoctorPatientLayoutPage from '../pages/doctor/patient/DoctorPatientLayoutPage.vue'
+import DoctorPatientOverviewPage from '../pages/doctor/patient/DoctorPatientOverviewPage.vue'
+import DoctorPatientClinicsPage from '../pages/doctor/patient/DoctorPatientClinicsPage.vue'
+import DoctorPatientClinicsAddPage from '../pages/doctor/patient/DoctorPatientClinicsAddPage.vue'
+import DoctorPatientClinicAttendancePage from '../pages/doctor/patient/DoctorPatientClinicAttendancePage.vue'
+import DoctorPatientMedicinesPage from '../pages/doctor/patient/DoctorPatientMedicinesPage.vue'
+import DoctorPatientMedicinesAddPage from '../pages/doctor/patient/DoctorPatientMedicinesAddPage.vue'
+import DoctorPatientRemindersPage from '../pages/doctor/patient/DoctorPatientRemindersPage.vue'
+import DoctorPatientReportsPage from '../pages/doctor/patient/DoctorPatientReportsPage.vue'
+import DoctorPatientReportsAddPage from '../pages/doctor/patient/DoctorPatientReportsAddPage.vue'
+import DoctorPatientHistoryPage from '../pages/doctor/patient/DoctorPatientHistoryPage.vue'
 import DoctorNotificationsPage from '../pages/shared/NotificationsPage.vue'
 
 type RoleMeta = { requiresAuth?: boolean; role?: UserRole }
@@ -76,6 +88,24 @@ export function createAppRouter(pinia: Pinia) {
       meta: { requiresAuth: true, role: 'doctor' } satisfies RoleMeta,
       children: [
         { path: 'dashboard', component: DoctorDashboardPage },
+        { path: 'patients', component: DoctorPatientsPage },
+        {
+          path: 'patients/:patientId',
+          component: DoctorPatientLayoutPage,
+          children: [
+            { path: '', redirect: 'overview' },
+            { path: 'overview', component: DoctorPatientOverviewPage },
+            { path: 'clinics', component: DoctorPatientClinicsPage },
+            { path: 'clinics/add', component: DoctorPatientClinicsAddPage },
+            { path: 'clinics/attendance', component: DoctorPatientClinicAttendancePage },
+            { path: 'medicines', component: DoctorPatientMedicinesPage },
+            { path: 'medicines/add', component: DoctorPatientMedicinesAddPage },
+            { path: 'reminders', component: DoctorPatientRemindersPage },
+            { path: 'reports', component: DoctorPatientReportsPage },
+            { path: 'reports/add', component: DoctorPatientReportsAddPage },
+            { path: 'history', component: DoctorPatientHistoryPage },
+          ],
+        },
         { path: 'appointments', component: DoctorAppointmentsPage },
         { path: 'notifications', component: DoctorNotificationsPage },
         { path: 'profile', component: DoctorProfilePage },

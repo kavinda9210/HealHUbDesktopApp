@@ -6,7 +6,8 @@ import { useLanguage } from '../context/LanguageContext';
 import { useTheme } from '../context/ThemeContext';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import AlertMessage from '../components/alerts/AlertMessage';
-import { scheduleAlarmAtAsync } from '../utils/alarms';
+import { cancelAlarmAsync, scheduleAlarmAtAsync } from '../utils/alarms';
+import { kvGet, kvSet } from '../utils/kvStorage';
 
 import ProfileViewCard, { PatientUser } from '../components/patient/profile/ProfileViewCard';
 import ProfileEditCard from '../components/patient/profile/ProfileEditCard';
@@ -82,6 +83,18 @@ type MedicineReminderRow = {
   status: string;
 };
 
+type MedicalReportRow = {
+  report_id?: number;
+  appointment_id?: number | null;
+  clinic_id?: number | null;
+  diagnosis?: string | null;
+  prescription?: string | null;
+  notes?: string | null;
+  created_at?: string | null;
+  doctor_name?: string | null;
+  specialization?: string | null;
+};
+
 type PatientdashboardProps = {
   accessToken?: string;
   onOpenAiDetect?: () => void;
@@ -137,6 +150,7 @@ export default function Patientdashboard({ accessToken, onOpenAiDetect, onOpenNo
   const [homeRecentAppointments, setHomeRecentAppointments] = useState<
     Array<{ id: string; doctor: string; date: string; time: string; status: string }>
   >([]);
+  const [homeReports, setHomeReports] = useState<Array<{ id: string; title: string; sub: string; report: MedicalReportRow }>>([]);
 
   const title = useMemo(() => {
     if (language === 'sinhala') return 'රෝගී පුවරුව';
@@ -159,8 +173,181 @@ export default function Patientdashboard({ accessToken, onOpenAiDetect, onOpenNo
       medicines: homeMedicines,
       clinics: homeClinics,
       recentAppointments: homeRecentAppointments,
+      reports: homeReports,
     };
-  }, [homeMedicines, homeClinics, homeRecentAppointments]);
+  }, [homeMedicines, homeClinics, homeRecentAppointments, homeReports]);
+
+  const parseTimeParts = (timeText: string): { hour: number; minute: number } | null => {
+    const t = String(timeText || '').trim();
+    if (!t) return null;
+    const hhmm = t.split(':');
+    if (hhmm.length < 2) return null;
+    const hour = Number(hhmm[0]);
+    const minute = Number(hhmm[1]);
+    if (!Number.isFinite(hour) || !Number.isFinite(minute)) return null;
+    if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return null;
+    return { hour, minute };
+  };
+
+  const makeLocalDateTime = (dateText: string, timeText: string): Date | null => {
+    const d = String(dateText || '').trim();
+    const parts = d.split('-');
+    if (parts.length !== 3) return null;
+    const year = Number(parts[0]);
+    const month = Number(parts[1]);
+    const day = Number(parts[2]);
+    if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) return null;
+    const tp = parseTimeParts(timeText);
+    const hour = tp?.hour ?? 9;
+    const minute = tp?.minute ?? 0;
+    return new Date(year, month - 1, day, hour, minute, 0, 0);
+  };
+
+  const downloadReportAsTextAsync = async (report: MedicalReportRow) => {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const FileSystem = require('expo-file-system') as any;
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const Sharing = require('expo-sharing') as any;
+
+      const created = (report.created_at || '').slice(0, 10) || new Date().toISOString().slice(0, 10);
+      const rid = report.report_id ?? 'report';
+      const filename = `healhub_medical_report_${rid}_${created}.txt`;
+      const uri = `${String(FileSystem.cacheDirectory || '')}${filename}`;
+
+      const content = [
+        'HealHub Medical Report',
+        `Date: ${created}`,
+        `Doctor: ${report.doctor_name || 'Unknown'}`,
+        report.specialization ? `Specialization: ${report.specialization}` : '',
+        '',
+        `Diagnosis: ${report.diagnosis || ''}`,
+        '',
+        `Prescription: ${report.prescription || ''}`,
+        report.notes ? `\nNotes: ${report.notes}` : '',
+        '',
+      ]
+        .filter(Boolean)
+        .join('\n');
+
+      await FileSystem.writeAsStringAsync(uri, content, { encoding: FileSystem.EncodingType?.UTF8 ?? 'utf8' });
+
+      const canShare = typeof Sharing.isAvailableAsync === 'function' ? await Sharing.isAvailableAsync() : false;
+      if (canShare) {
+        await Sharing.shareAsync(uri, {
+          mimeType: 'text/plain',
+          dialogTitle: language === 'sinhala' ? 'වෛද්‍ය වාර්තාව බාගත කරන්න' : language === 'tamil' ? 'மருத்துவ அறிக்கையை பதிவிறக்கு' : 'Download medical report',
+        });
+      }
+
+      showReminderToast(
+        'success',
+        language === 'sinhala'
+          ? 'වාර්තාව සකස් කළා.'
+          : language === 'tamil'
+            ? 'அறிக்கை தயாராக உள்ளது.'
+            : 'Report ready.'
+      );
+    } catch (e) {
+      console.log('downloadReportAsTextAsync failed:', e);
+      showReminderToast(
+        'error',
+        language === 'sinhala'
+          ? 'වාර්තාව බාගත කළ නොහැක. Dev build එකක් භාවිතා කරන්න.'
+          : language === 'tamil'
+            ? 'அறிக்கையை பதிவிறக்க முடியவில்லை. Dev build பயன்படுத்தவும்.'
+            : 'Unable to download report. Use a development build.'
+      );
+    }
+  };
+
+  const reconcilePatientAlarmScheduleAsync = async (input: {
+    clinics: ClinicRow[];
+    upcomingReminders: Array<any>;
+    doctorMap: Record<number, DoctorRow>;
+  }) => {
+    const STORAGE_KEY = 'patient_alarm_schedule_v1';
+    try {
+      const desired: Array<{ key: string; title: string; body: string; date: Date }> = [];
+      const now = Date.now();
+
+      for (const r of input.upcomingReminders) {
+        const dt = makeLocalDateTime(String(r.reminder_date || ''), String(r.reminder_time || ''));
+        if (!dt) continue;
+        if (dt.getTime() <= now + 15_000) continue;
+
+        const medicineName = String(r.medicine_name || '').trim() || `Medicine #${String(r.medication_id || '')}`;
+        const dosage = String(r.dosage || '').trim();
+        const when = `${String(r.reminder_date || '')} ${String(r.reminder_time || '').slice(0, 5)}`;
+        desired.push({
+          key: `med:${String(r.reminder_id || r.medication_id || medicineName)}:${when}`,
+          title: language === 'sinhala' ? 'ඖෂධ මතක් කිරීම' : language === 'tamil' ? 'மருந்து நினைவூட்டல்' : 'Medicine reminder',
+          body: dosage ? `${medicineName} • ${dosage} • ${when}` : `${medicineName} • ${when}`,
+          date: dt,
+        });
+      }
+
+      // Clinics: schedule only Scheduled clinics within 30 days
+      const maxClinicTime = now + 30 * 24 * 60 * 60 * 1000;
+      for (const c of input.clinics) {
+        if (String(c.status || '').toLowerCase() !== 'scheduled') continue;
+        const dt = makeLocalDateTime(String(c.clinic_date || ''), String(c.start_time || '09:00'));
+        if (!dt) continue;
+        const t = dt.getTime();
+        if (t <= now + 15_000 || t > maxClinicTime) continue;
+
+        const doc = input.doctorMap[c.doctor_id];
+        const doctorName = doc?.full_name ? `Dr. ${doc.full_name}` : `Doctor #${c.doctor_id}`;
+        const when = `${String(c.clinic_date || '')} ${String(c.start_time || '').slice(0, 5)}`;
+        desired.push({
+          key: `clinic:${String(c.clinic_id)}:${when}`,
+          title: language === 'sinhala' ? 'ක්ලිනික් මතක් කිරීම' : language === 'tamil' ? 'கிளினிக் நினைவூட்டல்' : 'Clinic reminder',
+          body: `${doctorName} • ${when}`,
+          date: dt,
+        });
+      }
+
+      desired.sort((a, b) => a.date.getTime() - b.date.getTime());
+      const limited = desired.slice(0, 50);
+      const desiredKeys = new Set(limited.map((d) => d.key));
+
+      const storedRaw = await kvGet(STORAGE_KEY);
+      let stored: Record<string, string> = {};
+      if (storedRaw) {
+        try {
+          stored = JSON.parse(storedRaw) as Record<string, string>;
+        } catch {
+          stored = {};
+        }
+      }
+
+      // Cancel alarms that are no longer desired
+      for (const [key, notifId] of Object.entries(stored)) {
+        if (desiredKeys.has(key)) continue;
+        try {
+          await cancelAlarmAsync(notifId);
+        } catch (e) {
+          console.log('cancelAlarmAsync failed:', e);
+        }
+        delete stored[key];
+      }
+
+      // Schedule missing
+      for (const d of limited) {
+        if (stored[d.key]) continue;
+        try {
+          const res = await scheduleAlarmAtAsync({ title: d.title, body: d.body, date: d.date });
+          stored[d.key] = res.id;
+        } catch (e) {
+          console.log('scheduleAlarmAtAsync (auto) failed:', e);
+        }
+      }
+
+      await kvSet(STORAGE_KEY, JSON.stringify(stored));
+    } catch (e) {
+      console.log('reconcilePatientAlarmScheduleAsync failed:', e);
+    }
+  };
 
   const bookAppointmentLabel = useMemo(() => {
     if (language === 'sinhala') return 'වෙන්කරගන්න';
@@ -342,10 +529,13 @@ export default function Patientdashboard({ accessToken, onOpenAiDetect, onOpenNo
 
       // Dashboard (clinics + appointments)
       const dashRes = await apiGet<any>('/api/patient/dashboard', accessToken);
+      let clinicsForSchedule: ClinicRow[] = [];
       if (!cancelled && dashRes.ok) {
         const data = dashRes.data?.data ?? {};
         const clinics: ClinicRow[] = Array.isArray(data.clinics) ? data.clinics : [];
         const appts: AppointmentRow[] = Array.isArray(data.appointments) ? data.appointments : [];
+
+        clinicsForSchedule = clinics;
 
         const clinicItems = clinics
           .filter((c) => String(c.status || '').toLowerCase() === 'scheduled')
@@ -378,6 +568,21 @@ export default function Patientdashboard({ accessToken, onOpenAiDetect, onOpenNo
         setHomeRecentAppointments(apptItems);
       }
 
+      // Medical reports
+      const reportsRes = await apiGet<any>('/api/patient/medical-reports', accessToken);
+      if (!cancelled && reportsRes.ok) {
+        const rows: MedicalReportRow[] = Array.isArray(reportsRes.data?.data) ? reportsRes.data.data : [];
+        const items = rows.slice(0, 6).map((r, idx) => {
+          const created = String(r.created_at || '').slice(0, 10) || '';
+          const doctor = r.doctor_name ? `Dr. ${r.doctor_name}` : '';
+          const title = String(r.diagnosis || '').trim() || (language === 'sinhala' ? 'වාර්තාව' : language === 'tamil' ? 'அறிக்கை' : 'Report');
+          const sub = [doctor, created].filter(Boolean).join(' • ');
+          const id = String(r.report_id ?? `${created}-${idx}`);
+          return { id, title, sub, report: r };
+        });
+        setHomeReports(items);
+      }
+
       // Medicines (today reminders + medication lookup)
       const [medsRes, remindersRes] = await Promise.all([
         apiGet<any>('/api/patient/medications', accessToken),
@@ -405,6 +610,21 @@ export default function Patientdashboard({ accessToken, onOpenAiDetect, onOpenNo
           };
         });
       setHomeMedicines(reminderItems);
+
+      // Auto-schedule alarms for upcoming reminders + clinics
+      try {
+        const upcomingRes = await apiGet<any>('/api/patient/medicine-reminders/upcoming?days=3', accessToken);
+        const upcoming = Array.isArray(upcomingRes.data?.data) ? upcomingRes.data.data : [];
+        if (!cancelled) {
+          await reconcilePatientAlarmScheduleAsync({
+            clinics: clinicsForSchedule,
+            upcomingReminders: upcoming,
+            doctorMap: docMap,
+          });
+        }
+      } catch (e) {
+        console.log('Auto scheduling alarms failed:', e);
+      }
     }
 
     loadHomeData();
@@ -712,6 +932,45 @@ export default function Patientdashboard({ accessToken, onOpenAiDetect, onOpenNo
                     : language === 'tamil'
                       ? 'வரவிருக்கும் கிளினிக்குகள் இல்லை.'
                       : 'No upcoming clinics.'}
+                </Text>
+              )}
+            </View>
+
+            <View style={[styles.sectionCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <Text style={[styles.sectionTitle, { color: colors.text }]}>
+                {language === 'sinhala' ? 'වෛද්‍ය වාර්තා' : language === 'tamil' ? 'மருத்துவ அறிக்கைகள்' : 'Medical reports'}
+              </Text>
+
+              {homeSections.reports.map((r) => (
+                <View key={r.id} style={[styles.itemRow, { borderTopColor: colors.border, alignItems: 'center' }]}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.itemTitle, { color: colors.text }]} numberOfLines={1}>
+                      {r.title}
+                    </Text>
+                    <Text style={[styles.itemSub, { color: colors.subtext }]} numberOfLines={1}>
+                      {r.sub || (language === 'sinhala' ? 'විස්තර නොමැත' : language === 'tamil' ? 'விவரம் இல்லை' : 'No details')}
+                    </Text>
+                  </View>
+                  <TouchableOpacity
+                    activeOpacity={0.85}
+                    onPress={() => void downloadReportAsTextAsync(r.report)}
+                    accessibilityRole="button"
+                    accessibilityLabel="Download report"
+                  >
+                    <Text style={[styles.itemRight, { color: colors.primary }]}>
+                      {language === 'sinhala' ? 'බාගත' : language === 'tamil' ? 'பதிவிறக்கு' : 'Download'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              ))}
+
+              {homeSections.reports.length === 0 && (
+                <Text style={[styles.cardText, { color: colors.subtext, marginTop: 8 }]}>
+                  {language === 'sinhala'
+                    ? 'වාර්තා දත්ත නොමැත.'
+                    : language === 'tamil'
+                      ? 'அறிக்கை தரவு இல்லை.'
+                      : 'No reports found.'}
                 </Text>
               )}
             </View>

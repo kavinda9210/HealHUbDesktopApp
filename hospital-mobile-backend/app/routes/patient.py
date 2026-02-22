@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from flask import Blueprint, request, jsonify, current_app
 from flask_jwt_extended import jwt_required, get_jwt_identity
 import math
@@ -12,7 +12,7 @@ from app.models.medical_models import (
 from app.models.user_models import PatientResponse
 from app.utils.supabase_client import SupabaseClient, get_user_by_id
 from app.utils.email_service import EmailService
-from app.utils.time_utils import sl_today_iso, sl_now_iso
+from app.utils.time_utils import sl_today_iso, sl_now_iso, sl_today
 
 logger = logging.getLogger(__name__)
 
@@ -589,6 +589,75 @@ def get_medicine_reminders():
             'message': 'Failed to get reminders',
             'error': str(e)
         }), 500
+
+
+@patient_bp.route('/medicine-reminders/upcoming', methods=['GET'])
+@jwt_required()
+def get_upcoming_medicine_reminders():
+    """Get upcoming pending medicine reminders for the next N days.
+
+    Query params:
+      - days: int (default 3, max 14)
+    """
+    try:
+        current_user_id = get_jwt_identity()
+        patient_id = get_patient_id(current_user_id)
+
+        if not patient_id:
+            return jsonify({'success': False, 'message': 'Patient profile not found'}), 404
+
+        try:
+            days = int(request.args.get('days', 3))
+        except Exception:
+            return jsonify({'success': False, 'message': 'days must be a number'}), 400
+
+        days = min(max(1, days), 14)
+        start_date = sl_today()
+        end_date = start_date + timedelta(days=days)
+
+        client = SupabaseClient.get_client()
+        q = (
+            client.table('medicine_reminders')
+            .select('reminder_id,patient_id,medication_id,reminder_date,reminder_time,status', count='exact')
+            .eq('patient_id', patient_id)
+            .eq('status', 'Pending')
+            .filter('reminder_date', 'gte', start_date.isoformat())
+            .filter('reminder_date', 'lte', end_date.isoformat())
+            .order('reminder_date')
+            .order('reminder_time')
+            .range(0, 500)
+        )
+        res = q.execute()
+        reminders = res.data or []
+
+        # Attach medication name/dosage for convenience
+        meds_res = SupabaseClient.execute_query(
+            'patient_medications',
+            'select',
+            filter_patient_id=patient_id,
+            columns='medication_id,medicine_name,dosage,frequency',
+            limit=1000,
+        )
+        meds_by_id = {}
+        if meds_res.get('success') and meds_res.get('data'):
+            meds_by_id = {int(m['medication_id']): m for m in meds_res['data'] if m.get('medication_id') is not None}
+
+        enriched = []
+        for r in reminders:
+            mid = r.get('medication_id')
+            med = meds_by_id.get(int(mid)) if mid is not None else None
+            item = dict(r)
+            if med:
+                item['medicine_name'] = med.get('medicine_name')
+                item['dosage'] = med.get('dosage')
+                item['frequency'] = med.get('frequency')
+            enriched.append(item)
+
+        return jsonify({'success': True, 'data': enriched, 'count': len(enriched), 'days': days}), 200
+
+    except Exception as e:
+        logger.error(f"Get upcoming reminders error: {str(e)}")
+        return jsonify({'success': False, 'message': 'Failed to get upcoming reminders', 'error': str(e)}), 500
 
 @patient_bp.route('/medicine-reminders/<int:reminder_id>/mark-taken', methods=['POST'])
 @jwt_required()
