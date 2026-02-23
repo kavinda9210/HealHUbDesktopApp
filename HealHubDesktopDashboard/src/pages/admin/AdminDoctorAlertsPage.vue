@@ -86,15 +86,15 @@ onMounted(loadDoctor)
   <div>
     <div class="flex items-start justify-between gap-4">
       <div>
-        <div class="text-xl font-semibold">Doctor alerts</div>
-        <div class="text-sm text-gray-500">Send an alert to this doctor</div>
+        <div class="text-xl font-semibold hh-title">Doctor alerts</div>
+        <div class="text-sm hh-muted">Send an alert to this doctor</div>
       </div>
 
       <div class="flex items-center gap-2">
-        <router-link class="rounded border border-gray-300 px-3 py-2 text-sm" to="/admin/doctors">Back</router-link>
+        <router-link class="hh-btn px-3 py-2 text-sm" to="/admin/doctors">Back</router-link>
         <router-link
           v-if="doctor"
-          class="rounded border border-gray-300 px-3 py-2 text-sm"
+          class="hh-btn px-3 py-2 text-sm"
           :to="`/admin/doctors/${doctor.doctor_id}`"
         >
           Doctor details
@@ -102,48 +102,57 @@ onMounted(loadDoctor)
       </div>
     </div>
 
-    <div v-if="error" class="mt-6 rounded border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+    <div
+      v-if="error"
+      class="mt-6 rounded border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-200"
+    >
       {{ error }}
     </div>
-    <div v-else-if="isLoading" class="mt-6 rounded border border-gray-200 bg-white px-4 py-3 text-sm text-gray-600">
+    <div v-else-if="isLoading" class="mt-6 hh-card-subtle px-4 py-3 text-sm hh-muted">
       Loading…
     </div>
 
-    <div v-else class="mt-6 rounded border border-gray-200 bg-white p-4">
-      <div class="text-sm font-medium">Doctor</div>
-      <div class="mt-1 text-sm text-gray-700">
-        <span class="font-medium text-gray-900">{{ doctor?.full_name || '-' }}</span>
+    <div v-else class="mt-6 hh-card p-4">
+      <div class="text-sm font-medium hh-title">Doctor</div>
+      <div class="mt-1 text-sm" style="color: var(--text-2)">
+        <span class="font-medium" style="color: var(--text-1)">{{ doctor?.full_name || '-' }}</span>
         <span v-if="doctor?.specialization"> · {{ doctor?.specialization }}</span>
         <span v-if="doctor?.email"> · {{ doctor?.email }}</span>
       </div>
 
-      <div class="mt-6 text-sm font-medium">Create alert</div>
+      <div class="mt-6 text-sm font-medium hh-title">Create alert</div>
       <form class="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2" @submit.prevent="sendAlert">
         <div class="md:col-span-2">
-          <label class="block text-xs font-medium text-gray-600">Title</label>
-          <input v-model="form.title" class="mt-1 w-full rounded border border-gray-300 px-3 py-2" required />
+          <label class="block text-xs font-medium hh-muted">Title</label>
+          <input v-model="form.title" class="mt-1 hh-input px-3 py-2 text-sm" required />
         </div>
 
         <div class="md:col-span-2">
-          <label class="block text-xs font-medium text-gray-600">Message</label>
-          <textarea v-model="form.message" rows="4" class="mt-1 w-full rounded border border-gray-300 px-3 py-2" required />
+          <label class="block text-xs font-medium hh-muted">Message</label>
+          <textarea v-model="form.message" rows="4" class="mt-1 hh-input px-3 py-2 text-sm" required />
         </div>
 
         <div>
-          <label class="block text-xs font-medium text-gray-600">Type</label>
-          <input v-model="form.type" class="mt-1 w-full rounded border border-gray-300 px-3 py-2" placeholder="Alert" />
+          <label class="block text-xs font-medium hh-muted">Type</label>
+          <input v-model="form.type" class="mt-1 hh-input px-3 py-2 text-sm" placeholder="Alert" />
         </div>
 
         <div class="flex items-end">
-          <button class="rounded bg-gray-900 px-4 py-2 text-sm text-white disabled:opacity-60" :disabled="isSending">
+          <button class="hh-btn-primary px-4 py-2 text-sm" :disabled="isSending">
             {{ isSending ? 'Sending…' : 'Send alert' }}
           </button>
         </div>
 
-        <div v-if="sendError" class="md:col-span-2 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+        <div
+          v-if="sendError"
+          class="md:col-span-2 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-200"
+        >
           {{ sendError }}
         </div>
-        <div v-else-if="sentOk" class="md:col-span-2 rounded border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700">
+        <div
+          v-else-if="sentOk"
+          class="md:col-span-2 rounded border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700 dark:border-green-900 dark:bg-green-950 dark:text-green-200"
+        >
           Alert sent.
         </div>
       </form>

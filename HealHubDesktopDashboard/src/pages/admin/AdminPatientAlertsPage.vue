@@ -86,17 +86,17 @@ onMounted(loadPatient)
   <div>
     <div class="flex items-start justify-between gap-4">
       <div>
-        <div class="text-xl font-semibold">Patient alerts</div>
-        <div class="text-sm text-gray-500 dark:text-gray-400">Send an alert to this patient</div>
+        <div class="text-xl font-semibold hh-title">Patient alerts</div>
+        <div class="text-sm hh-muted">Send an alert to this patient</div>
       </div>
 
       <div class="flex items-center gap-2">
-        <router-link class="rounded border border-gray-300 px-3 py-2 text-sm dark:border-gray-700 dark:text-gray-100" to="/admin/patients">
+        <router-link class="hh-btn px-3 py-2 text-sm" to="/admin/patients">
           Back
         </router-link>
         <router-link
           v-if="patient"
-          class="rounded border border-gray-300 px-3 py-2 text-sm dark:border-gray-700 dark:text-gray-100"
+          class="hh-btn px-3 py-2 text-sm"
           :to="`/admin/patients/${patient.patient_id}`"
         >
           Patient details
@@ -109,51 +109,51 @@ onMounted(loadPatient)
     </div>
     <div
       v-else-if="isLoading"
-      class="mt-6 rounded border border-gray-200 bg-white px-4 py-3 text-sm text-gray-600 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300"
+      class="mt-6 hh-card-subtle px-4 py-3 text-sm hh-muted"
     >
       Loading…
     </div>
 
-    <div v-else class="mt-6 rounded border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
-      <div class="text-sm font-medium">Patient</div>
-      <div class="mt-1 text-sm text-gray-700 dark:text-gray-300">
-        <span class="font-medium text-gray-900 dark:text-gray-100">{{ patient?.full_name || '-' }}</span>
+    <div v-else class="mt-6 hh-card p-4">
+      <div class="text-sm font-medium hh-title">Patient</div>
+      <div class="mt-1 text-sm" style="color: var(--text-2)">
+        <span class="font-medium" style="color: var(--text-1)">{{ patient?.full_name || '-' }}</span>
         <span v-if="patient?.email"> · {{ patient?.email }}</span>
         <span v-if="patient?.phone"> · {{ patient?.phone }}</span>
       </div>
 
-      <div class="mt-6 text-sm font-medium">Create alert</div>
+      <div class="mt-6 text-sm font-medium hh-title">Create alert</div>
       <form class="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2" @submit.prevent="sendAlert">
         <div class="md:col-span-2">
-          <label class="block text-xs font-medium text-gray-600 dark:text-gray-300">Title</label>
+          <label class="block text-xs font-medium hh-muted">Title</label>
           <input
             v-model="form.title"
-            class="mt-1 w-full rounded border border-gray-300 bg-white px-3 py-2 text-gray-900 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100"
+            class="mt-1 hh-input px-3 py-2 text-sm"
             required
           />
         </div>
 
         <div class="md:col-span-2">
-          <label class="block text-xs font-medium text-gray-600 dark:text-gray-300">Message</label>
+          <label class="block text-xs font-medium hh-muted">Message</label>
           <textarea
             v-model="form.message"
             rows="4"
-            class="mt-1 w-full rounded border border-gray-300 bg-white px-3 py-2 text-gray-900 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100"
+            class="mt-1 hh-input px-3 py-2 text-sm"
             required
           />
         </div>
 
         <div>
-          <label class="block text-xs font-medium text-gray-600 dark:text-gray-300">Type</label>
+          <label class="block text-xs font-medium hh-muted">Type</label>
           <input
             v-model="form.type"
-            class="mt-1 w-full rounded border border-gray-300 bg-white px-3 py-2 text-gray-900 placeholder-gray-400 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100 dark:placeholder-gray-500"
+            class="mt-1 hh-input px-3 py-2 text-sm"
             placeholder="Alert"
           />
         </div>
 
         <div class="flex items-end">
-          <button class="rounded bg-gray-900 px-4 py-2 text-sm text-white disabled:opacity-60" :disabled="isSending">
+          <button class="hh-btn-primary px-4 py-2 text-sm" :disabled="isSending">
             {{ isSending ? 'Sending…' : 'Send alert' }}
           </button>
         </div>

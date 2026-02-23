@@ -126,56 +126,56 @@ onActivated(() => {
   <div>
     <div class="flex items-start justify-between gap-4">
       <div>
-        <div class="text-xl font-semibold">Ambulances</div>
-        <div class="text-sm text-gray-500">Manage ambulance staff</div>
+        <div class="text-xl font-semibold hh-title">Ambulances</div>
+        <div class="text-sm hh-muted">Manage ambulance staff</div>
       </div>
       <div class="flex items-center gap-2">
-        <router-link class="rounded bg-gray-900 px-4 py-2 text-sm text-white" to="/admin/ambulances/create">
+        <router-link class="hh-btn-primary px-4 py-2 text-sm" to="/admin/ambulances/create">
           Create ambulance staff
         </router-link>
       </div>
     </div>
 
-    <div v-if="success" class="mt-4 rounded border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
+    <div v-if="success" class="mt-4 rounded border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700 dark:border-green-900/60 dark:bg-green-950/40 dark:text-green-200">
       {{ success }}
     </div>
-    <div v-if="actionError" class="mt-4 rounded border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+    <div v-if="actionError" class="mt-4 rounded border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-200">
       {{ actionError }}
     </div>
 
-    <div class="mt-4 rounded border border-gray-200 bg-white p-4">
-      <div class="text-sm font-medium">Filter ambulance staff</div>
+    <div class="mt-4 hh-card p-4">
+      <div class="text-sm font-medium hh-title">Filter ambulance staff</div>
       <form class="mt-3 grid grid-cols-1 gap-3 md:grid-cols-4" @submit.prevent="applyFilters">
         <div class="md:col-span-2">
-          <label class="block text-xs font-medium text-gray-600">Driver name</label>
-          <input v-model="filters.q" class="mt-1 w-full rounded border border-gray-300 px-3 py-2" placeholder="Search by driver name" />
+          <label class="block text-xs font-medium hh-muted">Driver name</label>
+          <input v-model="filters.q" class="mt-1 hh-input px-3 py-2 text-sm" placeholder="Search by driver name" />
         </div>
 
         <div class="md:col-span-4 flex items-center gap-2">
-          <button class="rounded bg-gray-900 px-4 py-2 text-sm text-white disabled:opacity-60" :disabled="isLoading">
+          <button class="hh-btn-primary px-4 py-2 text-sm" :disabled="isLoading">
             Apply filters
           </button>
-          <button type="button" class="rounded border border-gray-300 px-4 py-2 text-sm" @click="clearFilters" :disabled="isLoading">
+          <button type="button" class="hh-btn px-4 py-2 text-sm" @click="clearFilters" :disabled="isLoading">
             Clear
           </button>
         </div>
       </form>
     </div>
 
-    <div class="mt-6 rounded border border-gray-200 bg-white">
-      <div class="flex items-center justify-between border-b border-gray-200 px-4 py-3">
-        <div class="text-sm font-medium">Ambulance staff list</div>
-        <button class="rounded border border-gray-300 px-3 py-1.5 text-sm" @click="load" :disabled="isLoading">
+    <div class="mt-6 hh-card">
+      <div class="flex items-center justify-between border-b px-4 py-3" style="border-color: var(--border)">
+        <div class="text-sm font-medium hh-title">Ambulance staff list</div>
+        <button class="hh-btn px-3 py-1.5 text-sm" @click="load" :disabled="isLoading">
           Refresh
         </button>
       </div>
 
-      <div v-if="error" class="px-4 py-3 text-sm text-red-700">{{ error }}</div>
-      <div v-else-if="isLoading" class="px-4 py-3 text-sm text-gray-600">Loading…</div>
+      <div v-if="error" class="px-4 py-3 text-sm text-red-700 dark:text-red-200">{{ error }}</div>
+      <div v-else-if="isLoading" class="px-4 py-3 text-sm hh-muted">Loading…</div>
 
       <div class="overflow-auto">
-        <table class="min-w-full text-left text-sm">
-          <thead class="bg-gray-50 text-xs text-gray-600">
+        <table class="min-w-full text-left text-sm" style="color: var(--text-1)">
+          <thead class="hh-thead text-xs">
             <tr>
               <th class="px-4 py-2">Driver</th>
               <th class="px-4 py-2">Phone</th>
@@ -186,7 +186,7 @@ onActivated(() => {
             </tr>
           </thead>
           <tbody>
-            <tr v-for="r in rows" :key="r.ambulance_id" class="border-t border-gray-100">
+            <tr v-for="r in rows" :key="r.ambulance_id" class="hh-row">
               <td class="px-4 py-2">{{ r.driver_name || '-' }}</td>
               <td class="px-4 py-2">{{ r.driver_phone || '-' }}</td>
               <td class="px-4 py-2">{{ r.is_available ? 'Yes' : 'No' }}</td>
@@ -194,23 +194,23 @@ onActivated(() => {
               <td class="px-4 py-2">{{ r.ambulance_number || '-' }}</td>
               <td class="px-4 py-2 text-right">
                 <div class="flex justify-end gap-2">
-                  <router-link class="rounded border border-gray-300 px-3 py-1.5 text-xs" :to="`/admin/ambulances/${r.ambulance_id}`">
+                  <router-link class="hh-btn px-3 py-1.5 text-xs" :to="`/admin/ambulances/${r.ambulance_id}`">
                     View
                   </router-link>
-                  <router-link class="rounded border border-gray-300 px-3 py-1.5 text-xs" :to="`/admin/ambulances/${r.ambulance_id}/edit`">
+                  <router-link class="hh-btn px-3 py-1.5 text-xs" :to="`/admin/ambulances/${r.ambulance_id}/edit`">
                     Edit
                   </router-link>
-                  <router-link class="rounded border border-gray-300 px-3 py-1.5 text-xs" :to="`/admin/ambulances/${r.ambulance_id}/alerts`">
+                  <router-link class="hh-btn px-3 py-1.5 text-xs" :to="`/admin/ambulances/${r.ambulance_id}/alerts`">
                     Alerts
                   </router-link>
-                  <button class="rounded border border-gray-300 px-3 py-1.5 text-xs" @click="deleteAmbulance(r.ambulance_id)">
+                  <button class="hh-btn px-3 py-1.5 text-xs" @click="deleteAmbulance(r.ambulance_id)">
                     Delete
                   </button>
                 </div>
               </td>
             </tr>
             <tr v-if="!isLoading && rows.length === 0">
-              <td class="px-4 py-4 text-sm text-gray-600" colspan="7">No ambulance staff found.</td>
+              <td class="px-4 py-4 text-sm hh-muted" colspan="7">No ambulance staff found.</td>
             </tr>
           </tbody>
         </table>

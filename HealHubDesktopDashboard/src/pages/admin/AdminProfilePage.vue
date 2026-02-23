@@ -12,27 +12,27 @@ const phone = computed(() => auth.user?.phone || '-')
 
 <template>
   <div>
-    <div class="text-xl font-semibold">Profile</div>
-    <div class="text-sm text-gray-500 dark:text-gray-400">Your account details</div>
+    <div class="text-xl font-semibold hh-title">Profile</div>
+    <div class="text-sm hh-muted">Your account details</div>
 
-    <div class="mt-6 rounded border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
+    <div class="mt-6 hh-card">
       <div class="grid grid-cols-1 md:grid-cols-2">
-        <div class="border-b border-gray-100 p-4 dark:border-gray-800">
-          <div class="text-xs font-medium text-gray-500 dark:text-gray-400">Email</div>
-          <div class="mt-1 text-sm text-gray-900 dark:text-gray-100">{{ email }}</div>
+        <div class="border-b p-4" style="border-color: var(--border)">
+          <div class="text-xs font-medium hh-muted">Email</div>
+          <div class="mt-1 text-sm" style="color: var(--text-1)">{{ email }}</div>
         </div>
-        <div class="border-b border-gray-100 p-4 dark:border-gray-800">
-          <div class="text-xs font-medium text-gray-500 dark:text-gray-400">Role</div>
-          <div class="mt-1 text-sm text-gray-900 dark:text-gray-100">{{ role }}</div>
+        <div class="border-b p-4" style="border-color: var(--border)">
+          <div class="text-xs font-medium hh-muted">Role</div>
+          <div class="mt-1 text-sm" style="color: var(--text-1)">{{ role }}</div>
         </div>
 
-        <div class="border-b border-gray-100 p-4 dark:border-gray-800">
-          <div class="text-xs font-medium text-gray-500 dark:text-gray-400">Full name</div>
-          <div class="mt-1 text-sm text-gray-900 dark:text-gray-100">{{ fullName }}</div>
+        <div class="border-b p-4" style="border-color: var(--border)">
+          <div class="text-xs font-medium hh-muted">Full name</div>
+          <div class="mt-1 text-sm" style="color: var(--text-1)">{{ fullName }}</div>
         </div>
-        <div class="border-b border-gray-100 p-4 dark:border-gray-800">
-          <div class="text-xs font-medium text-gray-500 dark:text-gray-400">Phone</div>
-          <div class="mt-1 text-sm text-gray-900 dark:text-gray-100">{{ phone }}</div>
+        <div class="border-b p-4" style="border-color: var(--border)">
+          <div class="text-xs font-medium hh-muted">Phone</div>
+          <div class="mt-1 text-sm" style="color: var(--text-1)">{{ phone }}</div>
         </div>
       </div>
     </div>

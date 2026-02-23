@@ -163,29 +163,29 @@ onActivated(() => {
   <div>
     <div class="flex items-start justify-between gap-4">
       <div>
-        <div class="text-xl font-semibold">Doctor details</div>
-        <div class="text-sm text-gray-500 dark:text-gray-400">View doctor profile information</div>
+        <div class="text-xl font-semibold hh-title">Doctor details</div>
+        <div class="text-sm hh-muted">View doctor profile information</div>
       </div>
 
       <div class="flex items-center gap-2">
-        <router-link class="rounded border border-gray-300 px-3 py-2 text-sm dark:border-gray-700 dark:text-gray-100" to="/admin/doctors">
+        <router-link class="hh-btn px-3 py-2 text-sm" to="/admin/doctors">
           Back
         </router-link>
         <router-link
           v-if="row"
-          class="rounded border border-gray-300 px-3 py-2 text-sm dark:border-gray-700 dark:text-gray-100"
+          class="hh-btn px-3 py-2 text-sm"
           :to="`/admin/doctors/${row.doctor_id}/edit`"
         >
           Edit
         </router-link>
         <router-link
           v-if="row"
-          class="rounded border border-gray-300 px-3 py-2 text-sm dark:border-gray-700 dark:text-gray-100"
+          class="hh-btn px-3 py-2 text-sm"
           :to="`/admin/doctors/${row.doctor_id}/alerts`"
         >
           Alerts
         </router-link>
-        <button v-if="row" class="rounded bg-gray-900 px-3 py-2 text-sm text-white" @click="deleteDoctor">
+        <button v-if="row" class="hh-btn px-3 py-2 text-sm" @click="deleteDoctor">
           Delete
         </button>
       </div>
@@ -212,75 +212,75 @@ onActivated(() => {
     </div>
     <div
       v-else-if="isLoading && !row"
-      class="mt-6 rounded border border-gray-200 bg-white px-4 py-3 text-sm text-gray-600 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300"
+      class="mt-6 hh-card-subtle px-4 py-3 text-sm hh-muted"
     >
       Loading…
     </div>
 
-    <div v-else-if="row" class="mt-6 rounded border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
-      <div v-if="isLoading" class="border-b border-gray-100 px-4 py-2 text-xs text-gray-500 dark:border-gray-800 dark:text-gray-400">Refreshing…</div>
+    <div v-else-if="row" class="mt-6 hh-card">
+      <div v-if="isLoading" class="border-b px-4 py-2 text-xs hh-muted" style="border-color: var(--border)">Refreshing…</div>
       <div class="grid grid-cols-1 gap-0 md:grid-cols-2">
-        <div class="border-b border-gray-100 p-4 dark:border-gray-800">
-          <div class="text-xs font-medium text-gray-500 dark:text-gray-400">Full name</div>
-          <div class="mt-1 text-sm text-gray-900 dark:text-gray-100">{{ row.full_name }}</div>
+        <div class="border-b p-4" style="border-color: var(--border)">
+          <div class="text-xs font-medium hh-muted">Full name</div>
+          <div class="mt-1 text-sm" style="color: var(--text-1)">{{ row.full_name }}</div>
         </div>
-        <div class="border-b border-gray-100 p-4 dark:border-gray-800">
-          <div class="text-xs font-medium text-gray-500 dark:text-gray-400">Specialization</div>
-          <div class="mt-1 text-sm text-gray-900 dark:text-gray-100">{{ row.specialization || '-' }}</div>
-        </div>
-
-        <div class="border-b border-gray-100 p-4 dark:border-gray-800">
-          <div class="text-xs font-medium text-gray-500 dark:text-gray-400">Email</div>
-          <div class="mt-1 text-sm text-gray-900 dark:text-gray-100">{{ row.email || '-' }}</div>
-        </div>
-        <div class="border-b border-gray-100 p-4 dark:border-gray-800">
-          <div class="text-xs font-medium text-gray-500 dark:text-gray-400">Phone</div>
-          <div class="mt-1 text-sm text-gray-900 dark:text-gray-100">{{ row.phone || '-' }}</div>
+        <div class="border-b p-4" style="border-color: var(--border)">
+          <div class="text-xs font-medium hh-muted">Specialization</div>
+          <div class="mt-1 text-sm" style="color: var(--text-1)">{{ row.specialization || '-' }}</div>
         </div>
 
-        <div class="border-b border-gray-100 p-4 dark:border-gray-800">
-          <div class="text-xs font-medium text-gray-500 dark:text-gray-400">Qualification</div>
-          <div class="mt-1 text-sm text-gray-900 dark:text-gray-100">{{ row.qualification || '-' }}</div>
+        <div class="border-b p-4" style="border-color: var(--border)">
+          <div class="text-xs font-medium hh-muted">Email</div>
+          <div class="mt-1 text-sm" style="color: var(--text-1)">{{ row.email || '-' }}</div>
         </div>
-        <div class="border-b border-gray-100 p-4 dark:border-gray-800">
-          <div class="text-xs font-medium text-gray-500 dark:text-gray-400">Consultation fee</div>
-          <div class="mt-1 text-sm text-gray-900 dark:text-gray-100">{{ row.consultation_fee ?? '-' }}</div>
-        </div>
-
-        <div class="border-b border-gray-100 p-4 dark:border-gray-800">
-          <div class="text-xs font-medium text-gray-500 dark:text-gray-400">Available</div>
-          <div class="mt-1 text-sm text-gray-900 dark:text-gray-100">{{ row.is_available ? 'Yes' : 'No' }}</div>
+        <div class="border-b p-4" style="border-color: var(--border)">
+          <div class="text-xs font-medium hh-muted">Phone</div>
+          <div class="mt-1 text-sm" style="color: var(--text-1)">{{ row.phone || '-' }}</div>
         </div>
 
-        <div class="border-b border-gray-100 p-4 dark:border-gray-800">
-          <div class="text-xs font-medium text-gray-500 dark:text-gray-400">Available days</div>
-          <div class="mt-1 text-sm text-gray-900 dark:text-gray-100">
+        <div class="border-b p-4" style="border-color: var(--border)">
+          <div class="text-xs font-medium hh-muted">Qualification</div>
+          <div class="mt-1 text-sm" style="color: var(--text-1)">{{ row.qualification || '-' }}</div>
+        </div>
+        <div class="border-b p-4" style="border-color: var(--border)">
+          <div class="text-xs font-medium hh-muted">Consultation fee</div>
+          <div class="mt-1 text-sm" style="color: var(--text-1)">{{ row.consultation_fee ?? '-' }}</div>
+        </div>
+
+        <div class="border-b p-4" style="border-color: var(--border)">
+          <div class="text-xs font-medium hh-muted">Available</div>
+          <div class="mt-1 text-sm" style="color: var(--text-1)">{{ row.is_available ? 'Yes' : 'No' }}</div>
+        </div>
+
+        <div class="border-b p-4" style="border-color: var(--border)">
+          <div class="text-xs font-medium hh-muted">Available days</div>
+          <div class="mt-1 text-sm" style="color: var(--text-1)">
             {{ row.is_available ? displayDays(row.available_days) : '-' }}
           </div>
         </div>
 
-        <div class="border-b border-gray-100 p-4 dark:border-gray-800">
-          <div class="text-xs font-medium text-gray-500 dark:text-gray-400">Start time</div>
-          <div class="mt-1 text-sm text-gray-900 dark:text-gray-100">
+        <div class="border-b p-4" style="border-color: var(--border)">
+          <div class="text-xs font-medium hh-muted">Start time</div>
+          <div class="mt-1 text-sm" style="color: var(--text-1)">
             {{ row.is_available ? displayTime(row.start_time) : '-' }}
           </div>
         </div>
 
-        <div class="border-b border-gray-100 p-4 dark:border-gray-800">
-          <div class="text-xs font-medium text-gray-500 dark:text-gray-400">End time</div>
-          <div class="mt-1 text-sm text-gray-900 dark:text-gray-100">
+        <div class="border-b p-4" style="border-color: var(--border)">
+          <div class="text-xs font-medium hh-muted">End time</div>
+          <div class="mt-1 text-sm" style="color: var(--text-1)">
             {{ row.is_available ? displayTime(row.end_time) : '-' }}
           </div>
         </div>
 
-        <div class="border-b border-gray-100 p-4 dark:border-gray-800">
-          <div class="text-xs font-medium text-gray-500 dark:text-gray-400">Created</div>
-          <div class="mt-1 text-sm text-gray-900 dark:text-gray-100">{{ row.created_at || '-' }}</div>
+        <div class="border-b p-4" style="border-color: var(--border)">
+          <div class="text-xs font-medium hh-muted">Created</div>
+          <div class="mt-1 text-sm" style="color: var(--text-1)">{{ row.created_at || '-' }}</div>
         </div>
       </div>
     </div>
 
-    <div v-else class="mt-6 rounded border border-gray-200 bg-white px-4 py-3 text-sm text-gray-600 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300">
+    <div v-else class="mt-6 hh-card-subtle px-4 py-3 text-sm hh-muted">
       Doctor not found.
     </div>
   </div>

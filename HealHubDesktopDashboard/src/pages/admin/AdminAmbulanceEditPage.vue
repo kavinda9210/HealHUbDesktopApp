@@ -95,46 +95,56 @@ onMounted(load)
   <div>
     <div class="flex items-start justify-between gap-4">
       <div>
-        <div class="text-xl font-semibold">Edit ambulance staff</div>
-        <div class="text-sm text-gray-500">Update ambulance staff information</div>
+        <div class="text-xl font-semibold hh-title">Edit ambulance staff</div>
+        <div class="text-sm hh-muted">Update ambulance staff information</div>
       </div>
       <div class="flex items-center gap-2">
-        <router-link class="rounded border border-gray-300 px-3 py-2 text-sm" :to="`/admin/ambulances/${route.params.ambulanceId}`">Cancel</router-link>
+        <router-link class="hh-btn px-3 py-2 text-sm" :to="`/admin/ambulances/${route.params.ambulanceId}`">Cancel</router-link>
       </div>
     </div>
 
-    <div v-if="error" class="mt-6 rounded border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{{ error }}</div>
-    <div v-else-if="isLoading" class="mt-6 rounded border border-gray-200 bg-white px-4 py-3 text-sm text-gray-600">Loading…</div>
+    <div
+      v-if="error"
+      class="mt-6 rounded border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-200"
+    >
+      {{ error }}
+    </div>
+    <div v-else-if="isLoading" class="mt-6 hh-card-subtle px-4 py-3 text-sm hh-muted">Loading…</div>
 
-    <form v-else class="mt-6 rounded border border-gray-200 bg-white p-4" @submit.prevent="save">
+    <form v-else class="mt-6 hh-card p-4" @submit.prevent="save">
       <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
         <div>
-          <label class="block text-xs font-medium text-gray-600">Email</label>
-          <input v-model="form.email" type="email" class="mt-1 w-full rounded border border-gray-300 px-3 py-2" required />
+          <label class="block text-xs font-medium hh-muted">Email</label>
+          <input v-model="form.email" type="email" class="mt-1 hh-input px-3 py-2 text-sm" required />
         </div>
         <div>
-          <label class="block text-xs font-medium text-gray-600">Ambulance number</label>
-          <input v-model="form.ambulance_number" class="mt-1 w-full rounded border border-gray-300 px-3 py-2" required />
+          <label class="block text-xs font-medium hh-muted">Ambulance number</label>
+          <input v-model="form.ambulance_number" class="mt-1 hh-input px-3 py-2 text-sm" required />
         </div>
 
         <div>
-          <label class="block text-xs font-medium text-gray-600">Driver name</label>
-          <input v-model="form.driver_name" class="mt-1 w-full rounded border border-gray-300 px-3 py-2" required />
+          <label class="block text-xs font-medium hh-muted">Driver name</label>
+          <input v-model="form.driver_name" class="mt-1 hh-input px-3 py-2 text-sm" required />
         </div>
         <div>
-          <label class="block text-xs font-medium text-gray-600">Driver phone</label>
-          <input v-model="form.driver_phone" class="mt-1 w-full rounded border border-gray-300 px-3 py-2" required />
+          <label class="block text-xs font-medium hh-muted">Driver phone</label>
+          <input v-model="form.driver_phone" class="mt-1 hh-input px-3 py-2 text-sm" required />
         </div>
 
         <div class="md:col-span-2 flex items-center gap-2">
           <input id="is_available" v-model="form.is_available" type="checkbox" class="h-4 w-4" />
-          <label for="is_available" class="text-sm text-gray-700">Available</label>
+          <label for="is_available" class="text-sm" style="color: var(--text-2)">Available</label>
         </div>
 
-        <div v-if="saveError" class="md:col-span-2 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{{ saveError }}</div>
+        <div
+          v-if="saveError"
+          class="md:col-span-2 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-200"
+        >
+          {{ saveError }}
+        </div>
 
         <div class="md:col-span-2">
-          <button class="rounded bg-gray-900 px-4 py-2 text-sm text-white disabled:opacity-60" :disabled="isSaving">
+          <button class="hh-btn-primary px-4 py-2 text-sm" :disabled="isSaving">
             {{ isSaving ? 'Saving…' : 'Save changes' }}
           </button>
         </div>

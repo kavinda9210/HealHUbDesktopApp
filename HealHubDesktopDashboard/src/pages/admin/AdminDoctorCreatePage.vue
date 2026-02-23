@@ -81,12 +81,12 @@ async function createDoctor() {
   <div>
     <div class="flex items-start justify-between gap-4">
       <div>
-        <div class="text-xl font-semibold">Create doctor</div>
-        <div class="text-sm text-gray-500 dark:text-gray-400">Add a new doctor account</div>
+        <div class="text-xl font-semibold hh-title">Create doctor</div>
+        <div class="text-sm hh-muted">Add a new doctor account</div>
       </div>
       <div class="flex items-center gap-2">
         <router-link
-          class="rounded border border-gray-300 px-3 py-2 text-sm dark:border-gray-700 dark:text-gray-100"
+          class="hh-btn px-3 py-2 text-sm"
           to="/admin/doctors"
         >
           Back to list
@@ -94,86 +94,87 @@ async function createDoctor() {
       </div>
     </div>
 
-    <div class="mt-6 rounded border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
+    <div class="mt-6 hh-card p-4">
       <form class="grid grid-cols-1 gap-3 md:grid-cols-2" @submit.prevent="createDoctor">
         <div>
-          <label class="block text-xs font-medium text-gray-600 dark:text-gray-300">Email</label>
+          <label class="block text-xs font-medium hh-muted">Email</label>
           <input
             v-model="form.email"
             type="email"
-            class="mt-1 w-full rounded border border-gray-300 bg-white px-3 py-2 text-gray-900 placeholder-gray-400 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100 dark:placeholder-gray-500"
+            class="mt-1 hh-input px-3 py-2 text-sm"
             required
           />
         </div>
         <div>
-          <label class="block text-xs font-medium text-gray-600 dark:text-gray-300">Password</label>
+          <label class="block text-xs font-medium hh-muted">Password</label>
           <input
             v-model="form.password"
             type="password"
-            class="mt-1 w-full rounded border border-gray-300 bg-white px-3 py-2 text-gray-900 placeholder-gray-400 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100 dark:placeholder-gray-500"
+            class="mt-1 hh-input px-3 py-2 text-sm"
             required
           />
         </div>
 
         <div>
-          <label class="block text-xs font-medium text-gray-600 dark:text-gray-300">Full name</label>
+          <label class="block text-xs font-medium hh-muted">Full name</label>
           <input
             v-model="form.full_name"
-            class="mt-1 w-full rounded border border-gray-300 bg-white px-3 py-2 text-gray-900 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100"
+            class="mt-1 hh-input px-3 py-2 text-sm"
             required
           />
         </div>
         <div>
-          <label class="block text-xs font-medium text-gray-600 dark:text-gray-300">Specialization</label>
+          <label class="block text-xs font-medium hh-muted">Specialization</label>
           <input
             v-model="form.specialization"
-            class="mt-1 w-full rounded border border-gray-300 bg-white px-3 py-2 text-gray-900 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100"
+            class="mt-1 hh-input px-3 py-2 text-sm"
             required
           />
         </div>
 
         <div>
-          <label class="block text-xs font-medium text-gray-600 dark:text-gray-300">Qualification</label>
+          <label class="block text-xs font-medium hh-muted">Qualification</label>
           <input
             v-model="form.qualification"
-            class="mt-1 w-full rounded border border-gray-300 bg-white px-3 py-2 text-gray-900 placeholder-gray-400 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100 dark:placeholder-gray-500"
+            class="mt-1 hh-input px-3 py-2 text-sm"
             placeholder="Optional"
           />
         </div>
         <div>
-          <label class="block text-xs font-medium text-gray-600 dark:text-gray-300">Phone</label>
+          <label class="block text-xs font-medium hh-muted">Phone</label>
           <input
             v-model="form.phone"
-            class="mt-1 w-full rounded border border-gray-300 bg-white px-3 py-2 text-gray-900 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100"
+            class="mt-1 hh-input px-3 py-2 text-sm"
             required
           />
         </div>
 
         <div>
-          <label class="block text-xs font-medium text-gray-600 dark:text-gray-300">Consultation fee</label>
+          <label class="block text-xs font-medium hh-muted">Consultation fee</label>
           <input
             v-model="form.consultation_fee"
             inputmode="decimal"
-            class="mt-1 w-full rounded border border-gray-300 bg-white px-3 py-2 text-gray-900 placeholder-gray-400 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100 dark:placeholder-gray-500"
+            class="mt-1 hh-input px-3 py-2 text-sm"
             placeholder="0"
           />
         </div>
 
-        <div class="md:col-span-2 rounded border border-gray-200 bg-gray-50 p-4 dark:border-gray-800 dark:bg-gray-950">
-          <div class="text-sm font-medium text-gray-900 dark:text-gray-100">Availability</div>
+        <div class="md:col-span-2 hh-card-subtle p-4">
+          <div class="text-sm font-medium hh-title">Availability</div>
 
           <div class="mt-3 flex items-center gap-2">
             <input id="is_available" v-model="form.is_available" type="checkbox" class="h-4 w-4" />
-            <label for="is_available" class="text-sm text-gray-700 dark:text-gray-200">Available for appointments</label>
+            <label for="is_available" class="text-sm" style="color: var(--text-2)">Available for appointments</label>
           </div>
 
           <div class="mt-4">
-            <div class="text-xs font-medium text-gray-600 dark:text-gray-300">Available days</div>
+            <div class="text-xs font-medium hh-muted">Available days</div>
             <div class="mt-2 flex flex-wrap gap-3">
               <label
                 v-for="d in daysOfWeek"
                 :key="d.key"
-                class="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-200"
+                class="inline-flex items-center gap-2 text-sm"
+                style="color: var(--text-2)"
               >
                 <input
                   type="checkbox"
@@ -189,20 +190,20 @@ async function createDoctor() {
 
           <div class="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
             <div>
-              <label class="block text-xs font-medium text-gray-600 dark:text-gray-300">Start time</label>
+              <label class="block text-xs font-medium hh-muted">Start time</label>
               <input
                 v-model="form.start_time"
                 type="time"
-                class="mt-1 w-full rounded border border-gray-300 bg-white px-3 py-2 text-gray-900 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
+                class="mt-1 hh-input px-3 py-2 text-sm"
                 :disabled="!form.is_available"
               />
             </div>
             <div>
-              <label class="block text-xs font-medium text-gray-600 dark:text-gray-300">End time</label>
+              <label class="block text-xs font-medium hh-muted">End time</label>
               <input
                 v-model="form.end_time"
                 type="time"
-                class="mt-1 w-full rounded border border-gray-300 bg-white px-3 py-2 text-gray-900 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
+                class="mt-1 hh-input px-3 py-2 text-sm"
                 :disabled="!form.is_available"
               />
             </div>
@@ -217,7 +218,7 @@ async function createDoctor() {
         </div>
 
         <div class="md:col-span-2">
-          <button class="rounded bg-gray-900 px-4 py-2 text-sm text-white disabled:opacity-60" :disabled="createLoading">
+          <button class="hh-btn-primary px-4 py-2 text-sm" :disabled="createLoading">
             {{ createLoading ? 'Creating…' : 'Create doctor' }}
           </button>
         </div>
