@@ -2,6 +2,7 @@ import logging
 import uuid
 from datetime import datetime, timedelta
 from flask import Blueprint, request, jsonify, current_app
+from pydantic import ValidationError
 from flask_jwt_extended import (
     create_access_token, 
     create_refresh_token, 
@@ -538,6 +539,11 @@ def reset_password():
     """Reset password with verification code"""
     try:
         data = request.get_json()
+        if not isinstance(data, dict):
+            return jsonify({
+                'success': False,
+                'message': 'Invalid request body; expected JSON object'
+            }), 400
         reset_data = PasswordResetRequest(**data)
         
         # Verify reset code first
@@ -586,6 +592,14 @@ def reset_password():
             'success': True,
             'message': 'Password reset successful'
         }), 200
+
+    except ValidationError as e:
+        # Client-side input errors should not be 500s
+        return jsonify({
+            'success': False,
+            'message': 'Invalid reset password request',
+            'errors': e.errors()
+        }), 400
         
     except Exception as e:
         logger.error(f"Reset password error: {str(e)}")

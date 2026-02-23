@@ -107,13 +107,18 @@ export const useAuthStore = defineStore('auth', {
       }
     },
 
-    async resetPassword(email: string, verificationCode: string, newPassword: string) {
+    async resetPassword(email: string, verificationCode: string, newPassword: string, confirmPassword: string) {
       this.isLoading = true
       this.error = null
       try {
         const res = await api.post<{ success: boolean; message?: string }>(
           '/api/auth/reset-password',
-          { email, verification_code: verificationCode, new_password: newPassword },
+          {
+            email,
+            verification_code: verificationCode,
+            new_password: newPassword,
+            confirm_password: confirmPassword,
+          },
         )
         if (!res.success) throw new Error(res.message || 'Failed to reset password')
         return res.message || 'Password reset successful'
