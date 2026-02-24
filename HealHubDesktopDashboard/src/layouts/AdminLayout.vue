@@ -339,7 +339,7 @@ function logout() {
    ════════════════════════════════════════════════ */
 .shell {
   /* Brand */
-  --g-500: #2E8B57;
+  --g-500: #3da066;
   --g-600: #236B43;
   --g-400: #3da066;
   --g-100: #eaf6f0;
@@ -395,6 +395,10 @@ function logout() {
   --border:       #243028;
   --border-light: #1d2922;
 
+  --g-100: color-mix(in srgb, var(--g-500) 10%, var(--bg-topbar));
+  --g-200: color-mix(in srgb, var(--g-500) 16%, var(--bg-topbar));
+  --g-300: color-mix(in srgb, var(--g-500) 24%, var(--bg-topbar));
+
   --text-1:     #d6ede1;
   --text-2:     #a8c9b5;
   --text-3:     #668070;
@@ -402,8 +406,8 @@ function logout() {
 
   --nav-hover:   #1c2a22;
   --nav-active-bg: #1e3327;
-  --nav-active-fg: #6cd49a;
-  --nav-active-border: #3da066;
+  --nav-active-fg: var(--g-500);
+  --nav-active-border: var(--g-500);
 
   --shadow-sm: 0 1px 2px rgba(0,0,0,0.3);
   --shadow-md: 0 4px 16px rgba(0,0,0,0.4);
@@ -766,9 +770,9 @@ function logout() {
   color: #b82020;
 }
 .shell[data-theme="dark"] .tb-logout:hover {
-  background: #2c1212;
-  border-color: #6b2020;
-  color: #e08585;
+  background: color-mix(in srgb, var(--g-500) 12%, var(--bg-topbar));
+  border-color: color-mix(in srgb, var(--g-500) 22%, var(--border));
+  color: var(--g-500);
 }
 
 /* ── Content ──────────────────────────────────── */
@@ -776,6 +780,8 @@ function logout() {
   flex: 1;
   overflow-y: auto;
   padding: 2rem 2.25rem;
+  background: var(--bg-page);
+  transition: background 0.25s ease;
   scrollbar-width: thin;
   scrollbar-color: var(--border) transparent;
 }

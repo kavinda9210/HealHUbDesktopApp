@@ -8,7 +8,7 @@ const items = computed(() => toast.toasts)
 
 function toneClasses(type: string) {
   if (type === 'success') return 'border-green-200 bg-green-50 text-green-800 dark:border-green-900/50 dark:bg-green-950/40 dark:text-green-200'
-  if (type === 'error') return 'border-red-200 bg-red-50 text-red-800 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-200'
+  if (type === 'error') return 'border-red-200 bg-red-50 text-red-800 dark:border-green-900/50 dark:bg-green-950/40 dark:text-green-200'
   return 'border-gray-200 bg-white text-gray-800 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-100'
 }
 </script>

@@ -366,9 +366,9 @@ const greet = () => {
 
 /* Dark error */
 :global(.shell[data-theme="dark"]) .error-banner {
-  background: #2c1212;
-  border-color: #6b2020;
-  color: #e08585;
+  background: color-mix(in srgb, var(--g-500) 10%, var(--bg-topbar));
+  border-color: color-mix(in srgb, var(--g-500) 20%, var(--border));
+  color: var(--g-500);
 }
 
 .fade-enter-active, .fade-leave-active { transition: opacity 0.2s; }
@@ -445,10 +445,20 @@ const greet = () => {
 .stat-icon--ambulances{ background: #f0f4e6; color: #6a8c1a; }
 .stat-icon--newusers  { background: #fdf3e6; color: #c47b1a; }
 
-:global(.shell[data-theme="dark"]) .stat-icon--doctors    { background: #1a3327; color: #5dba83; }
-:global(.shell[data-theme="dark"]) .stat-icon--patients   { background: #1a2540; color: #7aaaf0; }
-:global(.shell[data-theme="dark"]) .stat-icon--ambulances { background: #222c14; color: #9ab84d; }
-:global(.shell[data-theme="dark"]) .stat-icon--newusers   { background: #2c2010; color: #dba05a; }
+:global(.shell[data-theme="dark"]) .stat-icon--doctors,
+:global(.shell[data-theme="dark"]) .stat-icon--patients,
+:global(.shell[data-theme="dark"]) .stat-icon--ambulances,
+:global(.shell[data-theme="dark"]) .stat-icon--newusers {
+  background: color-mix(in srgb, var(--g-500) 14%, var(--bg-topbar));
+  color: var(--g-500);
+}
+
+:global(.shell[data-theme="dark"]) .stat-bar--doctors,
+:global(.shell[data-theme="dark"]) .stat-bar--patients,
+:global(.shell[data-theme="dark"]) .stat-bar--ambulances,
+:global(.shell[data-theme="dark"]) .stat-bar--newusers {
+  background: var(--g-500);
+}
 
 /* Stat value */
 .stat-value {
@@ -567,10 +577,13 @@ const greet = () => {
 .quick-icon--sage  { background: #f0f4e6; color: #6a8c1a; }
 .quick-icon--amber { background: #fdf3e6; color: #c47b1a; }
 
-:global(.shell[data-theme="dark"]) .quick-icon--green { background: #1a3327; color: #5dba83; }
-:global(.shell[data-theme="dark"]) .quick-icon--teal  { background: #1a2540; color: #7aaaf0; }
-:global(.shell[data-theme="dark"]) .quick-icon--sage  { background: #222c14; color: #9ab84d; }
-:global(.shell[data-theme="dark"]) .quick-icon--amber { background: #2c2010; color: #dba05a; }
+:global(.shell[data-theme="dark"]) .quick-icon--green,
+:global(.shell[data-theme="dark"]) .quick-icon--teal,
+:global(.shell[data-theme="dark"]) .quick-icon--sage,
+:global(.shell[data-theme="dark"]) .quick-icon--amber {
+  background: color-mix(in srgb, var(--g-500) 14%, var(--bg-topbar));
+  color: var(--g-500);
+}
 
 .quick-text {
   flex: 1;
