@@ -59,8 +59,6 @@ const pageTitle = computed(() => {
   return 'HealHub'
 })
 
-const isDashboard = computed(() => route.path === '/admin/dashboard')
-
 function logout() {
   auth.logout()
   router.replace('/login')
@@ -310,7 +308,7 @@ function logout() {
       </header>
 
       <!-- Content -->
-      <main class="content" :class="{ 'content--dashboard': isDashboard }">
+      <main class="content">
         <router-view v-slot="{ Component }">
           <Transition name="page" mode="out-in">
             <keep-alive>
@@ -788,7 +786,7 @@ function logout() {
   scrollbar-color: var(--border) transparent;
 }
 
-.shell[data-theme="dark"] .content--dashboard {
+.shell[data-theme="dark"] .content {
   background: color-mix(in srgb, var(--bg-page) 85%, var(--g-500));
 }
 .content::-webkit-scrollbar { width: 5px; }
