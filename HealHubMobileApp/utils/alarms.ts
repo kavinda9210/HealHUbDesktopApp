@@ -1,6 +1,15 @@
 import { Platform } from 'react-native';
-import * as Notifications from 'expo-notifications';
-import Constants from 'expo-constants';
+
+type NotificationsModule = typeof import('expo-notifications');
+
+let notificationsModulePromise: Promise<NotificationsModule> | null = null;
+
+async function getNotificationsAsync(): Promise<NotificationsModule> {
+  if (!notificationsModulePromise) {
+    notificationsModulePromise = import('expo-notifications');
+  }
+  return notificationsModulePromise;
+}
 
 export type AlarmScheduleResult = {
   id: string;
@@ -12,21 +21,8 @@ export type AlarmBurstScheduleResult = {
 
 const ALARM_CHANNEL_ID = 'alarms_v2';
 
-function isExpoGo() {
-  // Expo Go reports `appOwnership: 'expo'`
-  // Dev builds / standalone are usually 'guest' | 'standalone'.
-  return Constants.appOwnership === 'expo';
-}
-
-function requireDevBuild(featureName: string) {
-  if (!isExpoGo()) return;
-  throw new Error(
-    `${featureName} is not supported in Expo Go on Android (SDK 53+). Use a development build (dev client) instead.`
-  );
-}
-
 export async function configureAlarmNotificationsAsync() {
-  requireDevBuild('Alarm notifications');
+  const Notifications = await getNotificationsAsync();
 
   Notifications.setNotificationHandler({
     handleNotification: async () => ({
@@ -59,7 +55,7 @@ export async function configureAlarmNotificationsAsync() {
 }
 
 export async function ensureAlarmPermissionAsync() {
-  requireDevBuild('Notifications');
+  const Notifications = await getNotificationsAsync();
   const settings = await Notifications.getPermissionsAsync();
   if (settings.status === 'granted') return settings;
   return await Notifications.requestPermissionsAsync();
@@ -70,7 +66,7 @@ export async function scheduleAlarmAtAsync(input: {
   body: string;
   date: Date;
 }): Promise<AlarmScheduleResult> {
-  requireDevBuild('Scheduling alarms');
+  const Notifications = await getNotificationsAsync();
   const perm = await ensureAlarmPermissionAsync();
   if (perm.status !== 'granted') {
     throw new Error('Notification permission not granted');
@@ -99,7 +95,7 @@ export async function scheduleAlarmInSecondsAsync(input: {
   body: string;
   seconds: number;
 }): Promise<AlarmScheduleResult> {
-  requireDevBuild('Scheduling alarms');
+  const Notifications = await getNotificationsAsync();
   const perm = await ensureAlarmPermissionAsync();
   if (perm.status !== 'granted') {
     throw new Error('Notification permission not granted');
@@ -138,7 +134,7 @@ export async function scheduleCallLikeAlarmBurstAsync(input: {
   repeatEverySeconds?: number;
   repeatCount?: number;
 }): Promise<AlarmBurstScheduleResult> {
-  requireDevBuild('Scheduling alarms');
+  const Notifications = await getNotificationsAsync();
 
   const startInSeconds = Math.max(1, Math.round(input.startInSeconds ?? 10));
   const repeatEverySeconds = Math.max(3, Math.round(input.repeatEverySeconds ?? 6));
@@ -179,7 +175,7 @@ export async function scheduleDailyMedicineReminderAsync(input: {
   hour: number;
   minute: number;
 }): Promise<AlarmScheduleResult> {
-  requireDevBuild('Daily medicine reminders');
+  const Notifications = await getNotificationsAsync();
   const perm = await ensureAlarmPermissionAsync();
   if (perm.status !== 'granted') {
     throw new Error('Notification permission not granted');
@@ -205,17 +201,17 @@ export async function scheduleDailyMedicineReminderAsync(input: {
 }
 
 export async function cancelAllAlarmsAsync() {
-  requireDevBuild('Canceling alarms');
+  const Notifications = await getNotificationsAsync();
   await Notifications.cancelAllScheduledNotificationsAsync();
 }
 
 export async function cancelAlarmAsync(id: string) {
-  requireDevBuild('Canceling alarms');
+  const Notifications = await getNotificationsAsync();
   if (!id) return;
   await Notifications.cancelScheduledNotificationAsync(String(id));
 }
 
 export async function listScheduledAlarmsAsync() {
-  requireDevBuild('Listing alarms');
+  const Notifications = await getNotificationsAsync();
   return await Notifications.getAllScheduledNotificationsAsync();
 }
