@@ -13,7 +13,7 @@ from app.models.user_models import PatientResponse
 from app.utils.supabase_client import SupabaseClient, get_user_by_id
 from app.utils.email_service import EmailService
 from app.utils.time_utils import sl_today_iso, sl_now_iso, sl_today
-from app.realtime import emit_user_invalidate
+from app.realtime import emit_user_invalidate, emit_patient_invalidate
 
 logger = logging.getLogger(__name__)
 
@@ -87,6 +87,12 @@ def clear_patient_notifications():
         result = SupabaseClient.execute_query('notifications', 'delete', **query_params)
         if not result.get('success'):
             return jsonify({'success': False, 'message': 'Failed to clear notifications'}), 500
+
+        # Real-time UI refresh (patient)
+        try:
+            emit_user_invalidate(str(current_user_id), topics=['notifications'])
+        except Exception:
+            pass
 
         return jsonify({'success': True, 'cleared': int(result.get('count') or 0)}), 200
 
@@ -336,6 +342,12 @@ def create_appointment():
             }), 500
         
         appointment = result['data'][0]
+
+        # Real-time UI refresh (patient)
+        try:
+            emit_patient_invalidate(int(patient_id), topics=['patient:dashboard'])
+        except Exception:
+            pass
         
         # Send notification to doctor
         patient_info = SupabaseClient.execute_query(

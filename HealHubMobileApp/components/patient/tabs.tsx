@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../context/ThemeContext';
 
-export type PatientTabKey = 'home' | 'appointment' | 'profile';
+export type PatientTabKey = 'home' | 'appointment' | 'medicine' | 'clinic' | 'reports' | 'profile';
 
 export type PatientTabsProps = {
   activeTab: PatientTabKey;
@@ -17,7 +17,9 @@ export default function PatientTabs({ activeTab, onChange }: PatientTabsProps) {
   const tabs: Array<{ key: PatientTabKey; icon: string; a11y: string }> = [
     { key: 'home', icon: '🏠', a11y: 'Home' },
     { key: 'appointment', icon: '📅', a11y: 'Appointment' },
-    { key: 'profile', icon: '👤', a11y: 'Profile' },
+    { key: 'medicine', icon: '💊', a11y: 'Medicine' },
+    { key: 'clinic', icon: '🏥', a11y: 'Clinic' },
+    { key: 'reports', icon: '📄', a11y: 'Reports' },
   ];
 
   return (

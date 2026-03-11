@@ -11,6 +11,7 @@ from app.models.medical_models import (
 from app.utils.supabase_client import SupabaseClient, get_user_by_id
 from app.utils.email_service import EmailService
 from app.utils.time_utils import sl_now, sl_now_iso
+from app.realtime import emit_patient_invalidate, emit_user_invalidate
 
 logger = logging.getLogger(__name__)
 
@@ -240,6 +241,13 @@ def create_bill():
                     <p>Please log in to your account to view and pay the bill.</p>
                     '''
                 )
+
+            # Real-time UI refresh (patient)
+            try:
+                emit_patient_invalidate(int(data['patient_id']), topics=['patient:dashboard'])
+                emit_user_invalidate(str(patient['user_id']), topics=['patient:dashboard', 'notifications'])
+            except Exception:
+                pass
         
         return jsonify({
             'success': True,

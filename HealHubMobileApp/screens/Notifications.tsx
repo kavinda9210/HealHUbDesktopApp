@@ -4,7 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLanguage } from '../context/LanguageContext';
 import NotificationList, { NotificationItem } from '../components/notifications/NotificationList';
 import { useTheme } from '../context/ThemeContext';
-import { apiGet } from '../utils/api';
+import { apiGet, apiPost } from '../utils/api';
 
 type PatientNotification = {
   notification_id: number;
@@ -110,7 +110,22 @@ export default function Notifications({ accessToken, onBack }: NotificationsProp
           onPressItem={(id) => {
             setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)));
           }}
-          onClearAll={() => setNotifications([])}
+          onClearAll={async () => {
+            if (!accessToken) {
+              setNotifications([]);
+              return;
+            }
+
+            setLoadError('');
+            const res = await apiPost<any>('/api/patient/notifications/clear', {}, accessToken);
+            if (!res.ok || !res.data?.success) {
+              const msg = (res.data && (res.data.message || res.data.error)) || 'Failed to clear notifications';
+              setLoadError(String(msg));
+              return;
+            }
+
+            setNotifications([]);
+          }}
           emptyText={language === 'sinhala' ? 'දැනුම්දීම් නැත' : language === 'tamil' ? 'அறிவிப்புகள் இல்லை' : 'No notifications'}
         />
       </ScrollView>

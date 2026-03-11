@@ -151,6 +151,12 @@ export default function Patientdashboard({ accessToken, onOpenAiDetect, onOpenNo
   const [notificationCount, setNotificationCount] = useState<number>(0);
 
   const [homeMedicines, setHomeMedicines] = useState<Array<{ id: string; name: string; time: string; note: string }>>([]);
+  const [todayMedicineReminders, setTodayMedicineReminders] = useState<
+    Array<{ id: string; name: string; time: string; note: string }>
+  >([]);
+  const [futureMedicineReminders, setFutureMedicineReminders] = useState<
+    Array<{ id: string; name: string; when: string; note: string }>
+  >([]);
   const [homeClinics, setHomeClinics] = useState<Array<{ id: string; title: string; when: string; where: string }>>([]);
   const [homeRecentAppointments, setHomeRecentAppointments] = useState<
     Array<{ id: string; doctor: string; date: string; time: string; status: string }>
@@ -169,6 +175,15 @@ export default function Patientdashboard({ accessToken, onOpenAiDetect, onOpenNo
     }
     if (activeTab === 'appointment') {
       return language === 'sinhala' ? 'වෙන්කිරීම්' : language === 'tamil' ? 'நியமனங்கள்' : 'Appointments';
+    }
+    if (activeTab === 'medicine') {
+      return language === 'sinhala' ? 'ඖෂධ' : language === 'tamil' ? 'மருந்துகள்' : 'Medicine';
+    }
+    if (activeTab === 'clinic') {
+      return language === 'sinhala' ? 'ක්ලිනික්' : language === 'tamil' ? 'கிளினிக்' : 'Clinic';
+    }
+    if (activeTab === 'reports') {
+      return language === 'sinhala' ? 'වාර්තා' : language === 'tamil' ? 'அறிக்கைகள்' : 'Reports';
     }
     return language === 'sinhala' ? 'පැතිකඩ' : language === 'tamil' ? 'சுயவிவரம்' : 'Profile';
   }, [activeTab, language]);
@@ -387,6 +402,14 @@ export default function Patientdashboard({ accessToken, onOpenAiDetect, onOpenNo
     return `${hh}:${mm}`;
   };
 
+  const getLocalYyyyMmDd = () => {
+    const d = new Date();
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  };
+
   const buildAppointmentDateTime = (d: Date | null, t: Date | null) => {
     if (!d || !t) return null;
     const dt = new Date(d);
@@ -601,10 +624,18 @@ export default function Patientdashboard({ accessToken, onOpenAiDetect, onOpenNo
       for (const m of meds) medsById[m.medication_id] = m;
 
       const reminders: MedicineReminderRow[] = Array.isArray(remindersRes.data?.data) ? remindersRes.data.data : [];
-      const reminderItems = reminders
+      const pending = reminders
         .filter((r) => String(r.status || '').toLowerCase() === 'pending')
-        .sort((a, b) => String(a.reminder_time).localeCompare(String(b.reminder_time)))
-        .slice(0, 6)
+        .sort((a, b) => {
+          const da = String(a.reminder_date || '');
+          const db = String(b.reminder_date || '');
+          if (da !== db) return da.localeCompare(db);
+          return String(a.reminder_time).localeCompare(String(b.reminder_time));
+        });
+
+      const todayText = getLocalYyyyMmDd();
+      const todayItems = pending
+        .filter((r) => String(r.reminder_date || '') === todayText)
         .map((r) => {
           const med = medsById[r.medication_id];
           return {
@@ -614,7 +645,28 @@ export default function Patientdashboard({ accessToken, onOpenAiDetect, onOpenNo
             note: med?.dosage ? String(med.dosage) : '',
           };
         });
-      setHomeMedicines(reminderItems);
+
+      const futureItems = pending
+        .filter((r) => {
+          const dateText = String(r.reminder_date || '');
+          return dateText && dateText > todayText;
+        })
+        .map((r) => {
+          const med = medsById[r.medication_id];
+          const when = `${String(r.reminder_date || '')} ${String(r.reminder_time || '').slice(0, 5)}`;
+          return {
+            id: String(r.reminder_id),
+            name: med?.medicine_name ? String(med.medicine_name) : `Medicine #${r.medication_id}`,
+            when,
+            note: med?.dosage ? String(med.dosage) : '',
+          };
+        });
+
+      setTodayMedicineReminders(todayItems);
+      setFutureMedicineReminders(futureItems);
+
+      // Home shows a compact version (today reminders first)
+      setHomeMedicines(todayItems.slice(0, 6));
 
       // Auto-schedule alarms for upcoming reminders + clinics
       try {
@@ -698,7 +750,7 @@ export default function Patientdashboard({ accessToken, onOpenAiDetect, onOpenNo
     return () => {
       cancelled = true;
     };
-  }, [activeTab, accessToken]);
+  }, [activeTab, accessToken, realtimeHomeTick]);
 
   useEffect(() => {
     // Doctor search by specialization + name.
@@ -787,13 +839,19 @@ export default function Patientdashboard({ accessToken, onOpenAiDetect, onOpenNo
               </TouchableOpacity>
             )}
 
-            {!!onLogout && (
-              <TouchableOpacity onPress={onLogout} activeOpacity={0.7} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                <Text style={[styles.logoutText, { color: colors.danger }]}>
-                  {language === 'sinhala' ? 'පිටවීම' : language === 'tamil' ? 'வெளியேறு' : 'Logout'}
-                </Text>
-              </TouchableOpacity>
-            )}
+                <TouchableOpacity
+                  onPress={() => {
+                    setActiveTab('profile');
+                  }}
+                  activeOpacity={0.7}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  accessibilityRole="button"
+                  accessibilityLabel="Profile"
+                >
+                  <Text style={[styles.profileText, { color: colors.primary }]}>
+                    {language === 'sinhala' ? 'පැතිකඩ' : language === 'tamil' ? 'சுயவிவரம்' : 'Profile'}
+                  </Text>
+                </TouchableOpacity>
           </View>
         </View>
         <Text style={[styles.subtitle, { color: colors.subtext }]}>{tabTitle}</Text>
@@ -1304,6 +1362,133 @@ export default function Patientdashboard({ accessToken, onOpenAiDetect, onOpenNo
               )}
             </View>
           </ScrollView>
+        ) : activeTab === 'medicine' ? (
+          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+            <View style={[styles.sectionCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <Text style={[styles.sectionTitle, { color: colors.text }]}>
+                {language === 'sinhala' ? 'අද ඖෂධ' : language === 'tamil' ? 'இன்றைய மருந்துகள்' : 'Today medicines'}
+              </Text>
+
+              {todayMedicineReminders.map((m) => (
+                <View key={m.id} style={[styles.itemRow, { borderTopColor: colors.border }]}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.itemTitle, { color: colors.text }]}>{m.name}</Text>
+                    <Text style={[styles.itemSub, { color: colors.subtext }]}>{m.note}</Text>
+                  </View>
+                  <Text style={[styles.itemRight, { color: colors.primary }]}>{m.time}</Text>
+                </View>
+              ))}
+
+              {todayMedicineReminders.length === 0 && (
+                <Text style={[styles.cardText, { color: colors.subtext, marginTop: 8 }]}>
+                  {language === 'sinhala'
+                    ? 'අද සඳහා ඖෂධ මතක් කිරීම් නැත.'
+                    : language === 'tamil'
+                      ? 'இன்றைக்கு மருந்து நினைவூட்டல்கள் இல்லை.'
+                      : 'No medicine reminders for today.'}
+                </Text>
+              )}
+            </View>
+
+            <View style={[styles.sectionCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <Text style={[styles.sectionTitle, { color: colors.text }]}>
+                {language === 'sinhala' ? 'ඉදිරි ඖෂධ' : language === 'tamil' ? 'வரவிருக்கும் மருந்துகள்' : 'Future medicines'}
+              </Text>
+
+              {futureMedicineReminders.map((m) => (
+                <View key={m.id} style={[styles.itemRow, { borderTopColor: colors.border }]}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.itemTitle, { color: colors.text }]}>{m.name}</Text>
+                    <Text style={[styles.itemSub, { color: colors.subtext }]}>{m.note}</Text>
+                  </View>
+                  <Text style={[styles.itemRight, { color: colors.primary }]}>{m.when}</Text>
+                </View>
+              ))}
+
+              {futureMedicineReminders.length === 0 && (
+                <Text style={[styles.cardText, { color: colors.subtext, marginTop: 8 }]}>
+                  {language === 'sinhala'
+                    ? 'ඉදිරි ඖෂධ මතක් කිරීම් නැත.'
+                    : language === 'tamil'
+                      ? 'வரவிருக்கும் மருந்து நினைவூட்டல்கள் இல்லை.'
+                      : 'No future medicine reminders.'}
+                </Text>
+              )}
+            </View>
+          </ScrollView>
+        ) : activeTab === 'clinic' ? (
+          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+            <View style={[styles.sectionCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <Text style={[styles.sectionTitle, { color: colors.text }]}>
+                {language === 'sinhala' ? 'ක්ලිනික්' : language === 'tamil' ? 'கிளினிக்' : 'Clinic'}
+              </Text>
+
+              {homeSections.clinics.map((c) => (
+                <View key={c.id} style={[styles.itemRow, { borderTopColor: colors.border }]}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.itemTitle, { color: colors.text }]}>{c.title}</Text>
+                    <Text style={[styles.itemSub, { color: colors.subtext }]}>
+                      {c.where ? `${c.when} • ${c.where}` : c.when}
+                    </Text>
+                  </View>
+                  <Text style={[styles.itemRight, { color: colors.primary }]}>
+                    {language === 'sinhala' ? 'විස්තර' : language === 'tamil' ? 'விவரம்' : 'Details'}
+                  </Text>
+                </View>
+              ))}
+
+              {homeSections.clinics.length === 0 && (
+                <Text style={[styles.cardText, { color: colors.subtext, marginTop: 8 }]}>
+                  {language === 'sinhala'
+                    ? 'ක්ලිනික් දත්ත නොමැත.'
+                    : language === 'tamil'
+                      ? 'கிளினிக் தரவு இல்லை.'
+                      : 'No clinic data.'}
+                </Text>
+              )}
+            </View>
+          </ScrollView>
+        ) : activeTab === 'reports' ? (
+          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+            <View style={[styles.sectionCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <Text style={[styles.sectionTitle, { color: colors.text }]}>
+                {language === 'sinhala' ? 'වාර්තා' : language === 'tamil' ? 'அறிக்கைகள்' : 'Reports'}
+              </Text>
+
+              {homeSections.reports.map((r) => (
+                <View key={r.id} style={[styles.itemRow, { borderTopColor: colors.border, alignItems: 'center' }]}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.itemTitle, { color: colors.text }]} numberOfLines={1}>
+                      {r.title}
+                    </Text>
+                    <Text style={[styles.itemSub, { color: colors.subtext }]} numberOfLines={1}>
+                      {r.sub || (language === 'sinhala' ? 'විස්තර නොමැත' : language === 'tamil' ? 'விவரம் இல்லை' : 'No details')}
+                    </Text>
+                  </View>
+                  <TouchableOpacity
+                    activeOpacity={0.85}
+                    onPress={() => void downloadReportAsTextAsync(r.report)}
+                    accessibilityRole="button"
+                    accessibilityLabel="Download report"
+                  >
+                    <Text style={[styles.itemRight, { color: colors.primary }]}>
+                      {language === 'sinhala' ? 'බාගත' : language === 'tamil' ? 'பதிவிறக்கு' : 'Download'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              ))}
+
+              {homeSections.reports.length === 0 && (
+                <Text style={[styles.cardText, { color: colors.subtext, marginTop: 8 }]}>
+                  {language === 'sinhala'
+                    ? 'වාර්තා දත්ත නොමැත.'
+                    : language === 'tamil'
+                      ? 'அறிக்கை தரவு இல்லை.'
+                      : 'No reports found.'}
+                </Text>
+              )}
+            </View>
+          </ScrollView>
         ) : (
           <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
             {profileView === 'verify-email' ? (
@@ -1336,9 +1521,23 @@ export default function Patientdashboard({ accessToken, onOpenAiDetect, onOpenNo
               <ProfileViewCard user={user} onEdit={() => setProfileView('edit')} />
             )}
 
+            {!!onLogout && (
+              <TouchableOpacity
+                style={[styles.profileLogoutBtn, { borderColor: colors.danger }]}
+                activeOpacity={0.85}
+                onPress={onLogout}
+                accessibilityRole="button"
+                accessibilityLabel="Logout"
+              >
+                <Text style={[styles.profileLogoutText, { color: colors.danger }]}>
+                  {language === 'sinhala' ? 'පිටවීම' : language === 'tamil' ? 'வெளியேறு' : 'Logout'}
+                </Text>
+              </TouchableOpacity>
+            )}
+
             <LanguagePickerInline />
             <ThemeToggleCard />
-            <DeleteAccountCard onDelete={onLogout} />
+            <DeleteAccountCard />
           </ScrollView>
         )}
       </View>
@@ -1399,6 +1598,10 @@ const styles = StyleSheet.create({
     marginTop: -1,
   },
   logoutText: {
+    fontWeight: '900',
+    fontSize: 14,
+  },
+  profileText: {
     fontWeight: '900',
     fontSize: 14,
   },
@@ -1592,5 +1795,15 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
     lineHeight: 18,
+  },
+  profileLogoutBtn: {
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  profileLogoutText: {
+    fontSize: 13,
+    fontWeight: '900',
   },
 });

@@ -7,7 +7,8 @@ export type InvalidatePayload = {
 
 export function connectRealtime(accessToken: string): Socket {
   return io(API_BASE_URL, {
-    transports: ['websocket', 'polling'],
+    transports: ['polling'],
+    upgrade: false,
     auth: { token: accessToken },
     reconnection: true,
     reconnectionAttempts: Infinity,

@@ -1,0 +1,3 @@
+{
+  "python.defaultInterpreterPath": "${workspaceFolder}\\hospital-mobile-backend\\venv\\Scripts\\python.exe"
+}

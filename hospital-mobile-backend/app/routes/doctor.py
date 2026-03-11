@@ -9,7 +9,7 @@ from flask_jwt_extended import jwt_required, get_jwt_identity
 from app.utils.supabase_client import SupabaseClient, get_user_by_id
 from app.utils.email_service import EmailService
 from app.utils.time_utils import sl_now_iso, sl_today
-from app.realtime import emit_patient_invalidate
+from app.realtime import emit_patient_invalidate, emit_user_invalidate
 from app.utils.scheduling import normalize_times, next_fourth_tuesday, daterange
 
 logger = logging.getLogger(__name__)
@@ -385,6 +385,14 @@ def doctor_accept_appointment(appointment_id: int):
                     )
                 )
 
+        # Real-time UI refresh (patient)
+        try:
+            emit_patient_invalidate(int(appt['patient_id']), topics=['patient:dashboard'])
+            if patient and patient.get('user_id'):
+                emit_user_invalidate(str(patient['user_id']), topics=['patient:dashboard', 'notifications'])
+        except Exception:
+            pass
+
         return jsonify({'success': True, 'message': 'Appointment accepted', 'consultation_fee': fee}), 200
 
     except Exception as e:
@@ -444,6 +452,14 @@ def doctor_decline_appointment(appointment_id: int):
                         f"<li>Doctor: {doctor.get('full_name','')}</li></ul>"
                     )
                 )
+
+        # Real-time UI refresh (patient)
+        try:
+            emit_patient_invalidate(int(appt['patient_id']), topics=['patient:dashboard'])
+            if patient and patient.get('user_id'):
+                emit_user_invalidate(str(patient['user_id']), topics=['patient:dashboard', 'notifications'])
+        except Exception:
+            pass
 
         return jsonify({'success': True, 'message': 'Appointment declined'}), 200
 
@@ -544,6 +560,13 @@ def doctor_create_appointment_for_patient():
                     f"<p>Channeling fee: {fee}</p>"
                 )
             )
+
+        # Real-time UI refresh (patient)
+        try:
+            emit_patient_invalidate(int(patient_id), topics=['patient:dashboard'])
+            emit_user_invalidate(str(patient['user_id']), topics=['patient:dashboard', 'notifications'])
+        except Exception:
+            pass
 
         return jsonify({'success': True, 'message': 'Appointment created', 'data': appt}), 201
 
@@ -830,6 +853,14 @@ def doctor_create_report(patient_id: int):
                     f"<p>Notes: {notes or ''}</p>"
                 )
             )
+
+        # Real-time UI refresh (patient)
+        try:
+            emit_patient_invalidate(int(patient_id), topics=['patient:dashboard', 'patient:reports'])
+            if patient and patient.get('user_id'):
+                emit_user_invalidate(str(patient['user_id']), topics=['patient:dashboard', 'notifications'])
+        except Exception:
+            pass
 
         return jsonify({'success': True, 'message': 'Report created', 'data': report}), 201
 

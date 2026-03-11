@@ -161,10 +161,10 @@ const MainApp: React.FC<MainAppProps> = ({ onLogout, onOpenPatientDashboard }) =
               </Text>
               <Text style={styles.dashboardCtaSubtitle}>
                 {language === 'sinhala'
-                  ? 'Home / Appointment / Profile ටැබ් පරීක්ෂා කරන්න'
+                  ? 'Home / Appointment / Medicine / Clinic / Reports ටැබ් පරීක්ෂා කරන්න'
                   : language === 'tamil'
-                    ? 'Home / Appointment / Profile டாப்களை சோதிக்கவும்'
-                    : 'Test Home / Appointment / Profile tabs'}
+                    ? 'Home / Appointment / Medicine / Clinic / Reports டாப்களை சோதிக்கவும்'
+                    : 'Test Home / Appointment / Medicine / Clinic / Reports tabs'}
               </Text>
             </TouchableOpacity>
           </View>
