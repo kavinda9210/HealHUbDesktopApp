@@ -191,6 +191,10 @@ export default function Patientdashboard({ accessToken, pendingMedicineTake, onC
       }
   >(null);
   const [homeClinics, setHomeClinics] = useState<Array<{ id: string; title: string; when: string; where: string }>>([]);
+  const [clinicById, setClinicById] = useState<Record<string, ClinicRow>>({});
+  const [clinicDetailsCard, setClinicDetailsCard] = useState<
+    null | { title: string; date: string; startTime: string; endTime?: string; status: string; notes?: string }
+  >(null);
   const [homeRecentAppointments, setHomeRecentAppointments] = useState<
     Array<{ id: string; doctor: string; date: string; time: string; status: string }>
   >([]);
@@ -633,6 +637,10 @@ export default function Patientdashboard({ accessToken, pendingMedicineTake, onC
 
         clinicsForSchedule = clinics;
 
+        const clinicMap: Record<string, ClinicRow> = {};
+        for (const c of clinics) clinicMap[String(c.clinic_id)] = c;
+        setClinicById(clinicMap);
+
         const clinicItems = clinics
           .filter((c) => String(c.status || '').toLowerCase() === 'scheduled')
           .slice(0, 6)
@@ -1068,6 +1076,80 @@ export default function Patientdashboard({ accessToken, pendingMedicineTake, onC
         </View>
       </Modal>
 
+      <Modal
+        visible={!!clinicDetailsCard}
+        transparent
+        animationType="fade"
+        presentationStyle="overFullScreen"
+        statusBarTranslucent
+        hardwareAccelerated
+        onRequestClose={() => setClinicDetailsCard(null)}
+      >
+        <View style={styles.modalWrap}>
+          <Pressable style={StyleSheet.absoluteFillObject} onPress={() => setClinicDetailsCard(null)}>
+            <View
+              style={[
+                StyleSheet.absoluteFillObject,
+                {
+                  backgroundColor: mode === 'light' ? colors.text : colors.background,
+                  opacity: mode === 'light' ? 0.35 : 0.78,
+                },
+              ]}
+            />
+          </Pressable>
+
+          <View
+            style={[
+              styles.modalCard,
+              {
+                backgroundColor: colors.card,
+                borderColor: colors.border,
+                shadowColor: mode === 'light' ? colors.text : colors.background,
+              },
+            ]}
+          >
+            <View style={styles.modalHeaderRow}>
+              <Text style={[styles.sectionTitle, { color: colors.text, marginBottom: 0, flex: 1 }]}>
+                {language === 'sinhala' ? 'ක්ලිනික් විස්තර' : language === 'tamil' ? 'கிளினிக் விவரங்கள்' : 'Clinic details'}
+              </Text>
+              <TouchableOpacity
+                activeOpacity={0.85}
+                onPress={() => setClinicDetailsCard(null)}
+                style={[styles.smallPill, { borderColor: colors.border }]}
+              >
+                <Text style={[styles.smallPillText, { color: colors.subtext }]}>
+                  {language === 'sinhala' ? 'වසන්න' : language === 'tamil' ? 'மூடு' : 'Close'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            <Text style={[styles.cardText, { color: colors.subtext, marginTop: 10 }]}>
+              {clinicDetailsCard?.title ? String(clinicDetailsCard.title) : ''}
+            </Text>
+
+            <Text style={[styles.cardText, { color: colors.subtext, marginTop: 6 }]}>
+              {[
+                clinicDetailsCard?.date ? String(clinicDetailsCard.date) : '',
+                clinicDetailsCard?.startTime ? String(clinicDetailsCard.startTime) : '',
+                clinicDetailsCard?.endTime ? `- ${String(clinicDetailsCard.endTime)}` : '',
+              ]
+                .filter(Boolean)
+                .join(' ')}
+            </Text>
+
+            <Text style={[styles.cardText, { color: colors.subtext, marginTop: 6 }]}>
+              {(language === 'sinhala' ? 'තත්ත්වය: ' : language === 'tamil' ? 'நிலை: ' : 'Status: ') + String(clinicDetailsCard?.status || '')}
+            </Text>
+
+            {!!clinicDetailsCard?.notes && (
+              <Text style={[styles.cardText, { color: colors.subtext, marginTop: 6 }]}>
+                {(language === 'sinhala' ? 'සටහන්: ' : language === 'tamil' ? 'குறிப்பு: ' : 'Notes: ') + String(clinicDetailsCard.notes)}
+              </Text>
+            )}
+          </View>
+        </View>
+      </Modal>
+
       <View style={[styles.header, { borderBottomColor: colors.border }]}> 
         <View style={styles.headerTop}>
           <Text style={[styles.title, { color: colors.primary }]}>{title}</Text>
@@ -1243,7 +1325,27 @@ export default function Patientdashboard({ accessToken, pendingMedicineTake, onC
               </Text>
 
               {homeSections.clinics.map((c) => (
-                <View key={c.id} style={[styles.itemRow, { borderTopColor: colors.border }]}>
+                <TouchableOpacity
+                  key={c.id}
+                  activeOpacity={0.8}
+                  onPress={() => {
+                    const row = clinicById[String(c.id)];
+                    const dateText = row?.clinic_date ? String(row.clinic_date) : String(c.when).split('•')[0].trim();
+                    const startText = row?.start_time ? String(row.start_time).slice(0, 5) : '';
+                    const endText = row?.end_time ? String(row.end_time).slice(0, 5) : '';
+                    const statusText = row?.status ? String(row.status) : 'Scheduled';
+                    const notesText = row?.notes ? String(row.notes) : '';
+                    setClinicDetailsCard({
+                      title: String(c.title || ''),
+                      date: dateText,
+                      startTime: startText,
+                      endTime: endText || undefined,
+                      status: statusText,
+                      notes: notesText || undefined,
+                    });
+                  }}
+                  style={[styles.itemRow, { borderTopColor: colors.border }]}
+                >
                   <View style={{ flex: 1 }}>
                     <Text style={[styles.itemTitle, { color: colors.text }]}>{c.title}</Text>
                     <Text style={[styles.itemSub, { color: colors.subtext }]}>
@@ -1253,7 +1355,7 @@ export default function Patientdashboard({ accessToken, pendingMedicineTake, onC
                   <Text style={[styles.itemRight, { color: colors.primary }]}>
                     {language === 'sinhala' ? 'විස්තර' : language === 'tamil' ? 'விவரம்' : 'Details'}
                   </Text>
-                </View>
+                </TouchableOpacity>
               ))}
 
               {homeSections.clinics.length === 0 && (
