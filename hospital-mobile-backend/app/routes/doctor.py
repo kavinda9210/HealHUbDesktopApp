@@ -1533,83 +1533,86 @@ def doctor_list_prescription_records(patient_id: int):
 
         # Also include medication prescriptions (doctor-added medicines) so they appear in Prescription Records
         # even when they aren't linked to a specific appointment/clinic.
-        meds_res = (
-            client.table('medications')
-            .select(
-                'medication_id,doctor_id,medicine_name,dosage,frequency,times_per_day,specific_times,start_date,end_date,notes,prescribed_at,created_at,is_active'
+        try:
+            meds_res = (
+                client.table('patient_medications')
+                .select(
+                    'medication_id,doctor_id,medicine_name,dosage,frequency,times_per_day,specific_times,start_date,end_date,notes,prescribed_at,created_at,is_active'
+                )
+                .eq('patient_id', patient_id)
+                .order('created_at', desc=True)
+                .limit(2000)
+                .execute()
             )
-            .eq('patient_id', patient_id)
-            .order('created_at', desc=True)
-            .limit(2000)
-            .execute()
-        )
 
-        med_rows = meds_res.data or []
-        for m in med_rows:
-            mid = m.get('medication_id')
-            if mid is None:
-                continue
+            med_rows = meds_res.data or []
+            for m in med_rows:
+                mid = m.get('medication_id')
+                if mid is None:
+                    continue
 
-            medicine_name = (m.get('medicine_name') or '').strip()
-            dosage = (m.get('dosage') or '').strip()
-            frequency = (m.get('frequency') or '').strip()
-            times_per_day = m.get('times_per_day')
-            start_date = m.get('start_date')
-            end_date = m.get('end_date')
-            notes = (m.get('notes') or '').strip()
-            specific_times = m.get('specific_times')
+                medicine_name = (m.get('medicine_name') or '').strip()
+                dosage = (m.get('dosage') or '').strip()
+                frequency = (m.get('frequency') or '').strip()
+                times_per_day = m.get('times_per_day')
+                start_date = m.get('start_date')
+                end_date = m.get('end_date')
+                notes = (m.get('notes') or '').strip()
+                specific_times = m.get('specific_times')
 
-            times_part = ''
-            try:
-                # specific_times can be a JSON string or a list
-                if isinstance(specific_times, str) and specific_times.strip():
-                    parsed = json.loads(specific_times)
-                    if isinstance(parsed, list) and parsed:
-                        times_part = ', '.join([str(x) for x in parsed if x is not None])
-                elif isinstance(specific_times, list) and specific_times:
-                    times_part = ', '.join([str(x) for x in specific_times if x is not None])
-            except Exception:
                 times_part = ''
+                try:
+                    # specific_times can be a JSON string or a list
+                    if isinstance(specific_times, str) and specific_times.strip():
+                        parsed = json.loads(specific_times)
+                        if isinstance(parsed, list) and parsed:
+                            times_part = ', '.join([str(x) for x in parsed if x is not None])
+                    elif isinstance(specific_times, list) and specific_times:
+                        times_part = ', '.join([str(x) for x in specific_times if x is not None])
+                except Exception:
+                    times_part = ''
 
-            detail_chunks = []
-            if medicine_name and dosage:
-                detail_chunks.append(f"{medicine_name} ({dosage})")
-            elif medicine_name:
-                detail_chunks.append(f"{medicine_name}")
-            elif dosage:
-                detail_chunks.append(f"Dosage: {dosage}")
+                detail_chunks = []
+                if medicine_name and dosage:
+                    detail_chunks.append(f"{medicine_name} ({dosage})")
+                elif medicine_name:
+                    detail_chunks.append(f"{medicine_name}")
+                elif dosage:
+                    detail_chunks.append(f"Dosage: {dosage}")
 
-            if frequency:
-                detail_chunks.append(frequency)
-            if times_per_day is not None and str(times_per_day).strip() != '':
-                detail_chunks.append(f"{times_per_day}x/day")
-            if times_part:
-                detail_chunks.append(f"Times: {times_part}")
-            if start_date:
-                detail_chunks.append(f"Start: {start_date}")
-            if end_date:
-                detail_chunks.append(f"End: {end_date}")
-            if notes:
-                detail_chunks.append(f"Notes: {notes}")
+                if frequency:
+                    detail_chunks.append(frequency)
+                if times_per_day is not None and str(times_per_day).strip() != '':
+                    detail_chunks.append(f"{times_per_day}x/day")
+                if times_part:
+                    detail_chunks.append(f"Times: {times_part}")
+                if start_date:
+                    detail_chunks.append(f"Start: {start_date}")
+                if end_date:
+                    detail_chunks.append(f"End: {end_date}")
+                if notes:
+                    detail_chunks.append(f"Notes: {notes}")
 
-            prescription_text = ' | '.join(detail_chunks) if detail_chunks else 'Medication prescribed'
+                prescription_text = ' | '.join(detail_chunks) if detail_chunks else 'Medication prescribed'
 
-            # Use negative IDs for medication-derived rows to avoid collision with real prescription_records IDs.
-            try:
-                pseudo_id = -int(mid)
-            except Exception:
-                continue
+                # Use negative IDs for medication-derived rows to avoid collision with real prescription_records IDs.
+                try:
+                    pseudo_id = -int(mid)
+                except Exception:
+                    continue
 
-            rows.append(
-                {
-                    'prescription_id': pseudo_id,
-                    'appointment_id': None,
-                    'clinic_id': None,
-                    'prescription_text': prescription_text,
-                    'prescribed_by_doctor_id': m.get('doctor_id'),
-                    'created_at': m.get('prescribed_at') or m.get('created_at'),
-                }
-            )
+                rows.append(
+                    {
+                        'prescription_id': pseudo_id,
+                        'appointment_id': None,
+                        'clinic_id': None,
+                        'prescription_text': prescription_text,
+                        'prescribed_by_doctor_id': m.get('doctor_id'),
+                        'created_at': m.get('prescribed_at') or m.get('created_at'),
+                    }
+                )
+        except Exception as me:
+            logger.warning(f"Prescription records: medication merge failed: {me}")
 
         uniq = {}
         for r in rows:
