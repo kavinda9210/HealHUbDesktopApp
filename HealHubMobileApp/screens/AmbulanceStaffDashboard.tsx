@@ -6,13 +6,15 @@ import {
   TouchableOpacity,
   ScrollView,
   StatusBar,
-  ActivityIndicator,
-  TextInput,
-  Linking,
   Platform,
+  UIManager,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Location from 'expo-location';
+import MapView, { type LatLng } from 'react-native-maps';
+
+import AmbulanceRequestsCard from '../components/ambulance/AmbulanceRequestsCard';
+import AmbulanceStatusCard from '../components/ambulance/AmbulanceStatusCard';
 
 import { useLanguage } from '../context/LanguageContext';
 import { useTheme } from '../context/ThemeContext';
@@ -50,6 +52,15 @@ type AmbulanceRequest = {
   is_read?: boolean;
 };
 
+type ActiveMission = {
+  requestId: number;
+  title: string;
+  message: string;
+  patientLat: number;
+  patientLng: number;
+  acceptedAt: string;
+};
+
 function extractLatLng(text: string): { lat: number; lng: number } | null {
   // Matches: "Location: 6.9271, 79.8612"
   const match = text.match(/Location:\s*([-+]?\d+(?:\.\d+)?)\s*,\s*([-+]?\d+(?:\.\d+)?)/i);
@@ -60,34 +71,12 @@ function extractLatLng(text: string): { lat: number; lng: number } | null {
   return { lat, lng };
 }
 
-async function openDirections(lat: number, lng: number) {
-  const dest = `${lat},${lng}`;
-  const urls: string[] = Platform.OS === 'android'
-    ? [
-        `google.navigation:q=${encodeURIComponent(dest)}`,
-        `geo:${dest}?q=${encodeURIComponent(dest)}`,
-        `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(dest)}`,
-      ]
-    : [
-        `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(dest)}`,
-      ];
-
-  for (const url of urls) {
-    try {
-      await Linking.openURL(url);
-      return;
-    } catch {
-      // try next
-    }
-  }
-
-  throw new Error('Cannot open Maps');
-}
-
 export default function AmbulanceStaffDashboard({ accessToken, onBack, onLogout }: AmbulanceStaffDashboardProps) {
   const { language } = useLanguage();
   const { colors, mode } = useTheme();
   const insets = useSafeAreaInsets();
+
+  const mapRef = useRef<MapView | null>(null);
 
   const [status, setStatus] = useState<AmbulanceStatus | null>(null);
   const [requests, setRequests] = useState<AmbulanceRequest[]>([]);
@@ -102,6 +91,20 @@ export default function AmbulanceStaffDashboard({ accessToken, onBack, onLogout 
   const [regDriverName, setRegDriverName] = useState('');
   const [regDriverPhone, setRegDriverPhone] = useState('');
   const [regSubmitting, setRegSubmitting] = useState(false);
+
+  const [selectedRequestId, setSelectedRequestId] = useState<number | null>(null);
+  const [activeMission, setActiveMission] = useState<ActiveMission | null>(null);
+  const [routeSummary, setRouteSummary] = useState<{ distanceKm: number; durationMin: number } | null>(null);
+  const [routeLine, setRouteLine] = useState<Array<{ latitude: number; longitude: number }> | null>(null);
+  const [routeLoading, setRouteLoading] = useState(false);
+  const [routeError, setRouteError] = useState('');
+
+  const isMapSupported = useMemo(() => {
+    if (Platform.OS === 'web') return false;
+    const getConfig = (UIManager as any)?.getViewManagerConfig;
+    if (typeof getConfig !== 'function') return false;
+    return !!getConfig('AIRMap');
+  }, []);
 
   const title = useMemo(() => {
     if (language === 'sinhala') return 'ඇම්බියුලන්ස් කාර්ය මණ්ඩල';
@@ -155,6 +158,177 @@ export default function AmbulanceStaffDashboard({ accessToken, onBack, onLogout 
       setLoadingRequests(false);
     }
   };
+
+  const requestMarkers = useMemo(() => {
+    return requests
+      .map((r) => {
+        const coords = extractLatLng(r.message);
+        if (!coords) return null;
+        return {
+          id: r.notification_id,
+          title: r.title,
+          message: r.message,
+          lat: coords.lat,
+          lng: coords.lng,
+        };
+      })
+      .filter((x): x is NonNullable<typeof x> => !!x);
+  }, [requests]);
+
+  const missionMarker = useMemo(() => {
+    if (!activeMission) return null;
+    return {
+      id: activeMission.requestId,
+      title: activeMission.title,
+      message: activeMission.message,
+      lat: activeMission.patientLat,
+      lng: activeMission.patientLng,
+    };
+  }, [activeMission]);
+
+  const allMarkers = useMemo(() => {
+    const list = [...requestMarkers];
+    if (missionMarker && !list.some((m) => m.id === missionMarker.id)) {
+      list.unshift(missionMarker);
+    }
+    return list;
+  }, [missionMarker, requestMarkers]);
+
+  const ambulanceCoords = useMemo<LatLng | null>(() => {
+    if (typeof status?.current_latitude !== 'number' || typeof status?.current_longitude !== 'number') return null;
+    return { latitude: status.current_latitude, longitude: status.current_longitude };
+  }, [status?.current_latitude, status?.current_longitude]);
+
+  const [staticMapStatus, setStaticMapStatus] = useState<'loading' | 'ready' | 'error'>('loading');
+
+  const staticMapUrl = useMemo(() => {
+    // Works in Expo Go without any native map modules.
+    const selected = allMarkers.find((m) => m.id === selectedRequestId) ?? allMarkers[0] ?? null;
+    const centerLat = selected?.lat ?? ambulanceCoords?.latitude ?? 0;
+    const centerLng = selected?.lng ?? ambulanceCoords?.longitude ?? 0;
+    const zoom = selected ? 15 : ambulanceCoords ? 13 : 2;
+
+    const params: string[] = [];
+    params.push(`center=${encodeURIComponent(String(centerLat))},${encodeURIComponent(String(centerLng))}`);
+    params.push(`zoom=${encodeURIComponent(String(zoom))}`);
+    params.push('size=640x360');
+    params.push('maptype=mapnik');
+
+    // Marker format supports repeating markers parameter.
+    if (ambulanceCoords) {
+      params.push(
+        `markers=${encodeURIComponent(String(ambulanceCoords.latitude))},${encodeURIComponent(String(ambulanceCoords.longitude))},blue-pushpin`,
+      );
+    }
+    if (selected) {
+      params.push(`markers=${encodeURIComponent(String(selected.lat))},${encodeURIComponent(String(selected.lng))},red-pushpin`);
+    }
+
+    return `https://staticmap.openstreetmap.de/staticmap.php?${params.join('&')}`;
+  }, [allMarkers, ambulanceCoords, selectedRequestId]);
+
+  useEffect(() => {
+    setStaticMapStatus('loading');
+  }, [staticMapUrl]);
+
+  const initialRegion = useMemo(() => {
+    const firstRequest = allMarkers[0];
+    if (firstRequest) {
+      return {
+        latitude: firstRequest.lat,
+        longitude: firstRequest.lng,
+        latitudeDelta: 0.08,
+        longitudeDelta: 0.08,
+      };
+    }
+
+    if (ambulanceCoords) {
+      return {
+        latitude: ambulanceCoords.latitude,
+        longitude: ambulanceCoords.longitude,
+        latitudeDelta: 0.08,
+        longitudeDelta: 0.08,
+      };
+    }
+
+    return {
+      latitude: 0,
+      longitude: 0,
+      latitudeDelta: 80,
+      longitudeDelta: 80,
+    };
+  }, [ambulanceCoords, allMarkers]);
+
+  useEffect(() => {
+    if (!mapRef.current) return;
+    if (allMarkers.length === 0 && !ambulanceCoords) return;
+
+    const coords: LatLng[] = [];
+    if (ambulanceCoords) coords.push(ambulanceCoords);
+    for (const m of allMarkers) coords.push({ latitude: m.lat, longitude: m.lng });
+
+    const handle = setTimeout(() => {
+      mapRef.current?.fitToCoordinates(coords, {
+        animated: true,
+        edgePadding: { top: 42, right: 42, bottom: 42, left: 42 },
+      });
+    }, 250);
+
+    return () => clearTimeout(handle);
+  }, [allMarkers, ambulanceCoords]);
+
+  const computeBestRoute = async (from: LatLng, to: { lat: number; lng: number }) => {
+    setRouteLoading(true);
+    setRouteError('');
+    try {
+      const url = `https://router.project-osrm.org/route/v1/driving/${from.longitude},${from.latitude};${to.lng},${to.lat}?overview=full&geometries=geojson`;
+      const res = await fetch(url);
+      const json = await res.json();
+      const route = Array.isArray(json?.routes) ? json.routes[0] : null;
+      if (!route) {
+        setRouteSummary(null);
+        setRouteLine(null);
+        setRouteError('Unable to compute route');
+        return;
+      }
+
+      const distanceKm = Number(route.distance) / 1000;
+      const durationMin = Number(route.duration) / 60;
+      if (Number.isFinite(distanceKm) && Number.isFinite(durationMin)) {
+        setRouteSummary({ distanceKm: Number(distanceKm.toFixed(2)), durationMin: Math.max(1, Math.round(durationMin)) });
+      } else {
+        setRouteSummary(null);
+      }
+
+      const coords = route?.geometry?.coordinates;
+      if (Array.isArray(coords)) {
+        const line = coords
+          .filter((c: any) => Array.isArray(c) && c.length >= 2)
+          .map((c: any) => ({ latitude: Number(c[1]), longitude: Number(c[0]) }))
+          .filter((p: any) => Number.isFinite(p.latitude) && Number.isFinite(p.longitude));
+        setRouteLine(line.length ? line : null);
+      } else {
+        setRouteLine(null);
+      }
+    } catch {
+      setRouteSummary(null);
+      setRouteLine(null);
+      setRouteError('Unable to compute route');
+    } finally {
+      setRouteLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!activeMission) return;
+    if (!ambulanceCoords) {
+      setRouteSummary(null);
+      setRouteLine(null);
+      return;
+    }
+    void computeBestRoute(ambulanceCoords, { lat: activeMission.patientLat, lng: activeMission.patientLng });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeMission?.requestId, ambulanceCoords?.latitude, ambulanceCoords?.longitude]);
 
   const setAvailability = async (isAvailable: boolean) => {
     if (!accessToken) return;
@@ -231,10 +405,27 @@ export default function AmbulanceStaffDashboard({ accessToken, onBack, onLogout 
     if (!accessToken) return;
 
     setErrorMessage('');
+    const req = requests.find((r) => r.notification_id === notificationId) || null;
+    const coords = req ? extractLatLng(req.message) : null;
+
+    if (req && coords) {
+      setActiveMission({
+        requestId: notificationId,
+        title: req.title,
+        message: req.message,
+        patientLat: coords.lat,
+        patientLng: coords.lng,
+        acceptedAt: new Date().toISOString(),
+      });
+      setSelectedRequestId(notificationId);
+    }
+
     const res = await apiPost<any>(`/api/ambulance/requests/${notificationId}/accept`, {}, accessToken);
     if (!res.ok || res.data?.success === false) {
       const msg = (res.data && (res.data.message || res.data.error)) || 'Failed to accept request';
       setErrorMessage(String(msg));
+      setActiveMission((m) => (m?.requestId === notificationId ? null : m));
+      setSelectedRequestId((id) => (id === notificationId ? null : id));
       return;
     }
 
@@ -355,153 +546,64 @@ export default function AmbulanceStaffDashboard({ accessToken, onBack, onLogout 
           </View>
         )}
 
-        <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}
-        >
-          <View style={styles.rowBetween}>
-            <Text style={[styles.sectionTitle, { color: colors.text }]}>Status</Text>
-            <TouchableOpacity onPress={fetchStatus} activeOpacity={0.8} style={[styles.outlineBtn, { borderColor: colors.border }]}>
-              <Text style={[styles.outlineBtnText, { color: colors.subtext }]}>Refresh</Text>
-            </TouchableOpacity>
-          </View>
+        <AmbulanceStatusCard
+          colors={{ background: colors.background, card: colors.card, text: colors.text, subtext: colors.subtext, border: colors.border, primary: colors.primary }}
+          status={status}
+          loading={loadingStatus}
+          sharing={sharing}
+          errorMessage={errorMessage}
+          onRefresh={fetchStatus}
+          onToggleAvailability={() => {
+            if (!status) return;
+            void setAvailability(!status.is_available);
+          }}
+          onUpdateLocationOnce={() => {
+            void updateMyLocationOnce();
+          }}
+          onToggleSharing={() => {
+            if (sharing) {
+              void stopSharing();
+            } else {
+              void startSharing();
+            }
+          }}
+          regNumber={regNumber}
+          regDriverName={regDriverName}
+          regDriverPhone={regDriverPhone}
+          regSubmitting={regSubmitting}
+          setRegNumber={setRegNumber}
+          setRegDriverName={setRegDriverName}
+          setRegDriverPhone={setRegDriverPhone}
+          onSubmitRegister={() => {
+            void submitRegisterAmbulance();
+          }}
+        />
 
-          {loadingStatus ? (
-            <ActivityIndicator />
-          ) : status ? (
-            <>
-              <Text style={[styles.kv, { color: colors.subtext }]}>Ambulance: {status.ambulance_number}</Text>
-              <Text style={[styles.kv, { color: colors.subtext }]}>Driver: {status.driver_name} • {status.driver_phone}</Text>
-              <Text style={[styles.kv, { color: colors.subtext }]}>
-                Location: {typeof status.current_latitude === 'number' ? status.current_latitude.toFixed(5) : '-'} , {typeof status.current_longitude === 'number' ? status.current_longitude.toFixed(5) : '-'}
-              </Text>
-              <Text style={[styles.kv, { color: colors.subtext }]}>Available: {status.is_available ? 'Yes' : 'No'}</Text>
-
-              <View style={{ flexDirection: 'row', gap: 10, marginTop: 10, flexWrap: 'wrap' }}>
-                <TouchableOpacity
-                  style={[styles.primaryBtn, { backgroundColor: colors.primary }]}
-                  activeOpacity={0.85}
-                  onPress={() => setAvailability(!status.is_available)}
-                >
-                  <Text style={styles.primaryBtnText}>{status.is_available ? 'Set Unavailable' : 'Set Available'}</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[styles.outlineBtn, { borderColor: colors.border }]}
-                  activeOpacity={0.85}
-                  onPress={updateMyLocationOnce}
-                >
-                  <Text style={[styles.outlineBtnText, { color: colors.subtext }]}>Update location</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[styles.outlineBtn, { borderColor: colors.border }]}
-                  activeOpacity={0.85}
-                  onPress={sharing ? stopSharing : startSharing}
-                >
-                  <Text style={[styles.outlineBtnText, { color: colors.subtext }]}>{sharing ? 'Stop sharing' : 'Share location'}</Text>
-                </TouchableOpacity>
-              </View>
-
-              <Text style={[styles.note, { color: colors.subtext }]}>Location shares in background when enabled (stores latest offline and syncs when online).</Text>
-            </>
-          ) : (
-            <>
-              <Text style={[styles.note, { color: colors.subtext }]}>Ambulance profile not found. Register your ambulance to continue.</Text>
-              <TextInput
-                value={regNumber}
-                onChangeText={setRegNumber}
-                placeholder="Ambulance number"
-                placeholderTextColor={colors.subtext}
-                style={[styles.input, { borderColor: colors.border, color: colors.text }]}
-              />
-              <TextInput
-                value={regDriverName}
-                onChangeText={setRegDriverName}
-                placeholder="Driver name"
-                placeholderTextColor={colors.subtext}
-                style={[styles.input, { borderColor: colors.border, color: colors.text }]}
-              />
-              <TextInput
-                value={regDriverPhone}
-                onChangeText={setRegDriverPhone}
-                placeholder="Driver phone"
-                placeholderTextColor={colors.subtext}
-                style={[styles.input, { borderColor: colors.border, color: colors.text }]}
-                keyboardType="phone-pad"
-              />
-              <TouchableOpacity
-                style={[styles.primaryBtn, { backgroundColor: colors.primary, marginTop: 10 }]}
-                activeOpacity={0.85}
-                disabled={regSubmitting}
-                onPress={submitRegisterAmbulance}
-              >
-                {regSubmitting ? <ActivityIndicator color="#ffffff" /> : <Text style={styles.primaryBtnText}>Register ambulance</Text>}
-              </TouchableOpacity>
-            </>
-          )}
-        </View>
-
-        <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}
-        >
-          <View style={styles.rowBetween}>
-            <Text style={[styles.sectionTitle, { color: colors.text }]}>Requests</Text>
-            <TouchableOpacity onPress={fetchRequests} activeOpacity={0.8} style={[styles.outlineBtn, { borderColor: colors.border }]}>
-              <Text style={[styles.outlineBtnText, { color: colors.subtext }]}>Refresh</Text>
-            </TouchableOpacity>
-          </View>
-
-          {loadingRequests ? (
-            <ActivityIndicator />
-          ) : requests.length === 0 ? (
-            <Text style={[styles.note, { color: colors.subtext }]}>No new requests.</Text>
-          ) : (
-            requests.map((r) => {
-              const coords = extractLatLng(r.message);
-              return (
-                <View key={String(r.notification_id)} style={[styles.itemRow, { borderTopColor: colors.border }]}
-                >
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.itemTitle, { color: colors.text }]}>{r.title}</Text>
-                    <Text style={[styles.itemSub, { color: colors.subtext }]}>{r.message}</Text>
-                  </View>
-
-                  <View style={{ gap: 8, alignItems: 'flex-end' }}>
-                    {coords && (
-                      <TouchableOpacity
-                        activeOpacity={0.85}
-                        style={[styles.outlineBtnSmall, { borderColor: colors.border }]}
-                        onPress={async () => {
-                          try {
-                            await openDirections(coords.lat, coords.lng);
-                          } catch (e: any) {
-                            setErrorMessage(e?.message ? String(e.message) : 'Cannot open Maps');
-                          }
-                        }}
-                      >
-                        <Text style={[styles.outlineBtnText, { color: colors.subtext }]}>Directions</Text>
-                      </TouchableOpacity>
-                    )}
-
-                    <TouchableOpacity
-                      activeOpacity={0.85}
-                      style={[styles.primaryBtnSmall, { backgroundColor: colors.primary }]}
-                      onPress={() => acceptRequest(r.notification_id)}
-                    >
-                      <Text style={styles.primaryBtnText}>Accept</Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                      activeOpacity={0.85}
-                      style={[styles.outlineBtnSmall, { borderColor: colors.border }]}
-                      onPress={() => rejectRequest(r.notification_id)}
-                    >
-                      <Text style={[styles.outlineBtnText, { color: colors.subtext }]}>Reject</Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              );
-            })
-          )}
-        </View>
+        <AmbulanceRequestsCard
+          colors={{ card: colors.card, text: colors.text, subtext: colors.subtext, border: colors.border, primary: colors.primary, danger: colors.danger }}
+          status={status}
+          loadingRequests={loadingRequests}
+          requests={requests}
+          onRefreshRequests={fetchRequests}
+          isMapSupported={isMapSupported}
+          mapRef={mapRef}
+          initialRegion={initialRegion}
+          ambulanceCoords={ambulanceCoords}
+          markers={allMarkers}
+          selectedRequestId={selectedRequestId}
+          onSelectRequestId={setSelectedRequestId}
+          staticMapUrl={staticMapUrl}
+          staticMapStatus={staticMapStatus}
+          onStaticMapLoad={() => setStaticMapStatus('ready')}
+          onStaticMapError={() => setStaticMapStatus('error')}
+          activeMission={activeMission}
+          routeLoading={routeLoading}
+          routeSummary={routeSummary}
+          routeLine={routeLine}
+          routeError={routeError}
+          onAccept={(id) => { void acceptRequest(id); }}
+          onReject={(id) => { void rejectRequest(id); }}
+        />
       </ScrollView>
     </SafeAreaView>
   );
@@ -577,6 +679,24 @@ const styles = StyleSheet.create({
   },
   itemTitle: { fontSize: 14, fontWeight: '900' },
   itemSub: { marginTop: 6, fontSize: 12, fontWeight: '700' },
+  mapWrap: {
+    marginTop: 12,
+    height: 240,
+    borderRadius: 16,
+    overflow: 'hidden',
+    borderWidth: 1,
+  },
+  routeCard: {
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+  },
+  mapFallbackCenter: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+  },
   input: {
     marginTop: 10,
     borderWidth: 1,

@@ -16,6 +16,7 @@ import DeleteAccountCard from '../components/patient/profile/DeleteAccountCard';
 import LanguagePickerInline from '../components/settings/LanguagePickerInline';
 import ThemeToggleCard from '../components/settings/ThemeToggleCard';
 import { apiGet, apiPost } from '../utils/api';
+import PatientAmbulanceStatusCard from '../components/patient/ambulance/PatientAmbulanceStatusCard';
 
 type PatientNotification = {
   notification_id: number;
@@ -814,34 +815,12 @@ export default function Patientdashboard({ accessToken, onOpenAiDetect, onOpenNo
               </TouchableOpacity>
             </View>
 
-            <View style={[styles.sectionCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-              <Text style={[styles.sectionTitle, { color: colors.text }]}>
-                {language === 'sinhala'
-                  ? 'ඇම්බියුලන්ස් ඉල්ලීමේ තත්ත්වය'
-                  : language === 'tamil'
-                    ? 'ஆம்புலன்ஸ் கோரிக்கை நிலை'
-                    : 'Ambulance request status'}
-              </Text>
-
-              {!ambulanceStatus ? (
-                <Text style={[styles.cardText, { color: colors.subtext, marginTop: 8 }]}>
-                  {language === 'sinhala'
-                    ? 'දැනට ක්‍රියාකාරී ඉල්ලීමක් නැත.'
-                    : language === 'tamil'
-                      ? 'தற்போது செயலிலுள்ள கோரிக்கை இல்லை.'
-                      : 'No active request yet.'}
-                </Text>
-              ) : (
-                <View style={[styles.itemRow, { borderTopColor: colors.border }]}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.itemTitle, { color: colors.text }]}>{ambulanceStatus.title}</Text>
-                    <Text style={[styles.itemSub, { color: colors.subtext }]} numberOfLines={3}>
-                      {ambulanceStatus.message}
-                    </Text>
-                  </View>
-                </View>
-              )}
-            </View>
+            <PatientAmbulanceStatusCard
+              accessToken={accessToken}
+              language={language}
+              colors={{ card: colors.card, text: colors.text, subtext: colors.subtext, border: colors.border }}
+              ambulanceStatus={ambulanceStatus}
+            />
 
             <View
               style={[

@@ -970,6 +970,8 @@ def request_ambulance(ambulance_id: int):
             f"You requested ambulance {ambulance.get('ambulance_number', ambulance_id)}. "
             f"Waiting for response.\n"
             f"meta_ambulance_id={ambulance_id}\n"
+            f"meta_patient_lat={data['latitude']}\n"
+            f"meta_patient_lng={data['longitude']}\n"
             f"meta_staff_notification_id={staff_notification_id if staff_notification_id is not None else ''}"
         )
         SupabaseClient.execute_query(
@@ -1025,6 +1027,63 @@ def request_ambulance(ambulance_id: int):
             'message': 'Failed to request ambulance',
             'error': str(e)
         }), 500
+
+
+@patient_bp.route('/ambulances/<int:ambulance_id>/status', methods=['GET'])
+@jwt_required()
+def get_ambulance_status_for_patient(ambulance_id: int):
+    """Get the current ambulance location for the requesting patient.
+
+    Authorization is based on the patient's own Ambulance notifications containing meta_ambulance_id.
+    """
+    try:
+        current_user_id = get_jwt_identity()
+
+        # Verify patient has an active/request-related notification that references this ambulance.
+        notif_result = SupabaseClient.execute_query(
+            'notifications',
+            'select',
+            filter_user_id=current_user_id,
+            filter_type='Ambulance',
+            limit=50,
+            order_by='created_at',
+            order_desc=True
+        )
+
+        if not notif_result.get('success'):
+            return jsonify({'success': False, 'message': 'Failed to authorize tracking'}), 500
+
+        notifications = notif_result.get('data') or []
+        needle = f"meta_ambulance_id={ambulance_id}"
+        if not any(needle in (n.get('message') or '') for n in notifications):
+            return jsonify({'success': False, 'message': 'Not authorized to track this ambulance'}), 403
+
+        ambulance_result = SupabaseClient.execute_query(
+            'ambulances',
+            'select',
+            filter_ambulance_id=ambulance_id
+        )
+
+        if not ambulance_result.get('success') or not ambulance_result.get('data'):
+            return jsonify({'success': False, 'message': 'Ambulance not found'}), 404
+
+        a = ambulance_result['data'][0]
+        status_data = {
+            'ambulance_id': a.get('ambulance_id'),
+            'ambulance_number': a.get('ambulance_number'),
+            'driver_name': a.get('driver_name'),
+            'driver_phone': a.get('driver_phone'),
+            'current_latitude': a.get('current_latitude'),
+            'current_longitude': a.get('current_longitude'),
+            'is_available': a.get('is_available'),
+            'last_updated': a.get('last_updated'),
+        }
+
+        return jsonify({'success': True, 'data': status_data}), 200
+
+    except Exception as e:
+        logger.error(f"Get ambulance status for patient error: {str(e)}")
+        return jsonify({'success': False, 'message': 'Failed to get ambulance status', 'error': str(e)}), 500
 
 @patient_bp.route('/history', methods=['GET'])
 @jwt_required()

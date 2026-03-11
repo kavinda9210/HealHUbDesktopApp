@@ -413,6 +413,21 @@ def accept_request(notification_id: int):
             if patient_lat and patient_lng:
                 directions = f"Directions: https://www.google.com/maps/dir/?api=1&destination={patient_lat},{patient_lng}"
 
+            amb_lat = ambulance.get('current_latitude')
+            amb_lng = ambulance.get('current_longitude')
+
+            meta_lines = [
+                f"meta_ambulance_id={ambulance_id}",
+            ]
+            if amb_lat is not None:
+                meta_lines.append(f"meta_ambulance_lat={amb_lat}")
+            if amb_lng is not None:
+                meta_lines.append(f"meta_ambulance_lng={amb_lng}")
+            if patient_lat is not None:
+                meta_lines.append(f"meta_patient_lat={patient_lat}")
+            if patient_lng is not None:
+                meta_lines.append(f"meta_patient_lng={patient_lng}")
+
             SupabaseClient.execute_query(
                 'notifications',
                 'insert',
@@ -421,7 +436,8 @@ def accept_request(notification_id: int):
                 message=(
                     f"Ambulance {ambulance.get('ambulance_number', ambulance_id)} accepted your request and is on the way. "
                     f"Driver: {ambulance.get('driver_name', '')} {ambulance.get('driver_phone', '')}. "
-                    f"{directions}"
+                    f"{directions}\n"
+                    + "\n".join(meta_lines)
                 ).strip(),
                 type='Ambulance',
                 created_at=sl_now_iso()
