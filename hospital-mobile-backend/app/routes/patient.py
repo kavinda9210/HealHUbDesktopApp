@@ -827,51 +827,77 @@ def get_medical_reports():
                 'message': 'Patient profile not found'
             }), 404
         
-        # Get reports through appointments
-        appointments_result = SupabaseClient.execute_query(
-            'appointments',
-            'select',
-            filter_patient_id=patient_id,
-            filter_status='Completed'
-        )
-        
-        reports = []
-        
-        if appointments_result['success'] and appointments_result['data']:
-            for appointment in appointments_result['data']:
-                report_result = SupabaseClient.execute_query(
-                    'medical_reports',
-                    'select',
-                    filter_appointment_id=appointment['appointment_id']
-                )
-                
-                if report_result['success'] and report_result['data']:
-                    for report in report_result['data']:
-                        # Add appointment info to report
-                        report['appointment_date'] = appointment['appointment_date']
-                        report['doctor_id'] = appointment['doctor_id']
-                        
-                        # Get doctor info
-                        doctor_result = SupabaseClient.execute_query(
-                            'doctors',
-                            'select',
-                            filter_doctor_id=appointment['doctor_id']
-                        )
-                        
-                        if doctor_result['success'] and doctor_result['data']:
-                            report['doctor_name'] = doctor_result['data'][0]['full_name']
-                            report['specialization'] = doctor_result['data'][0]['specialization']
-                        
-                        reports.append(report)
-        
-        # Sort by date (newest first)
-        reports.sort(key=lambda x: x.get('created_at', ''), reverse=True)
-        
-        return jsonify({
-            'success': True,
-            'data': reports,
-            'count': len(reports)
-        }), 200
+        # Collect appointment_ids and clinic_ids for this patient, then pull reports.
+        # Includes both appointment-linked and clinic-participation-linked reports.
+        appts = SupabaseClient.execute_query('appointments', 'select', columns='appointment_id', filter_patient_id=patient_id, limit=2000)
+        clinics = SupabaseClient.execute_query('clinic_participation', 'select', columns='clinic_id', filter_patient_id=patient_id, limit=2000)
+        appt_ids = [r.get('appointment_id') for r in (appts.get('data') or []) if r.get('appointment_id') is not None]
+        clinic_ids = [r.get('clinic_id') for r in (clinics.get('data') or []) if r.get('clinic_id') is not None]
+
+        if not appt_ids and not clinic_ids:
+            return jsonify({'success': True, 'data': [], 'count': 0}), 200
+
+        client = SupabaseClient.get_client()
+        rows = []
+
+        if appt_ids:
+            res_a = (
+                client.table('medical_reports')
+                .select('report_id,appointment_id,clinic_id,diagnosis,prescription,notes,created_by_doctor_id,created_at')
+                .in_('appointment_id', [int(x) for x in appt_ids])
+                .execute()
+            )
+            rows.extend(res_a.data or [])
+
+        if clinic_ids:
+            res_c = (
+                client.table('medical_reports')
+                .select('report_id,appointment_id,clinic_id,diagnosis,prescription,notes,created_by_doctor_id,created_at')
+                .in_('clinic_id', [int(x) for x in clinic_ids])
+                .execute()
+            )
+            rows.extend(res_c.data or [])
+
+        uniq = {}
+        for r in rows:
+            rid = r.get('report_id')
+            if rid is None:
+                continue
+            uniq[str(rid)] = r
+
+        merged = list(uniq.values())
+        merged.sort(key=lambda x: str(x.get('created_at') or ''), reverse=True)
+
+        doctor_ids = sorted({int(r.get('created_by_doctor_id')) for r in merged if r.get('created_by_doctor_id') is not None})
+        doctor_map = {}
+        if doctor_ids:
+            docs_res = (
+                client.table('doctors')
+                .select('doctor_id,full_name,specialization')
+                .in_('doctor_id', doctor_ids)
+                .execute()
+            )
+            for d in (docs_res.data or []):
+                if d.get('doctor_id') is None:
+                    continue
+                doctor_map[int(d['doctor_id'])] = d
+
+        for r in merged:
+            did = r.get('created_by_doctor_id')
+            if did is None:
+                continue
+            try:
+                did_int = int(did)
+            except Exception:
+                did_int = None
+
+            drow = doctor_map.get(did_int) if did_int is not None else None
+            if drow:
+                r['doctor_id'] = did_int
+                r['doctor_name'] = drow.get('full_name')
+                r['specialization'] = drow.get('specialization')
+
+        return jsonify({'success': True, 'data': merged, 'count': len(merged)}), 200
         
     except Exception as e:
         logger.error(f"Get medical reports error: {str(e)}")

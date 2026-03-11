@@ -1403,39 +1403,79 @@ def doctor_list_reports(patient_id: int):
         page_size = min(max(5, page_size), 100)
         offset = (page - 1) * page_size
 
-        # Collect report_ids via appointment/clinic for this patient
-        client = SupabaseClient.get_client()
-        q = client.table('medical_reports').select(
-            'report_id,appointment_id,clinic_id,diagnosis,prescription,notes,created_by_doctor_id,created_at,doctors!medical_reports_created_by_doctor_id_fkey(full_name,specialization)',
-            count='exact',
-        )
-
-        # Filter by appointment/clinic belonging to patient (server side: join isn't easy); we filter in two steps.
-        # Approach: get appointment_ids and clinic_ids for patient, then filter reports by those.
-        appts = SupabaseClient.execute_query('appointments', 'select', columns='appointment_id', filter_patient_id=patient_id, limit=1000)
-        clinics = SupabaseClient.execute_query('clinic_participation', 'select', columns='clinic_id', filter_patient_id=patient_id, limit=1000)
-        appt_ids = [r['appointment_id'] for r in (appts.get('data') or []) if r.get('appointment_id') is not None]
-        clinic_ids = [r['clinic_id'] for r in (clinics.get('data') or []) if r.get('clinic_id') is not None]
+        # Fetch appointment_ids and clinic_ids for patient, then fetch reports in two queries.
+        # This avoids fragile PostgREST `or_` strings and FK-constraint-embedded joins.
+        appts = SupabaseClient.execute_query('appointments', 'select', columns='appointment_id', filter_patient_id=patient_id, limit=2000)
+        clinics = SupabaseClient.execute_query('clinic_participation', 'select', columns='clinic_id', filter_patient_id=patient_id, limit=2000)
+        appt_ids = [r.get('appointment_id') for r in (appts.get('data') or []) if r.get('appointment_id') is not None]
+        clinic_ids = [r.get('clinic_id') for r in (clinics.get('data') or []) if r.get('clinic_id') is not None]
 
         if not appt_ids and not clinic_ids:
             return jsonify({'success': True, 'data': [], 'count': 0, 'page': page, 'page_size': page_size}), 200
 
-        # Use OR over appointment_id/clinic_id
-        or_parts = []
+        client = SupabaseClient.get_client()
+
+        rows = []
         if appt_ids:
-            # PostgREST in list: appointment_id=in.(1,2,3)
-            or_parts.append('appointment_id=in.(' + ','.join([str(int(x)) for x in appt_ids]) + ')')
+            res_a = (
+                client.table('medical_reports')
+                .select('report_id,appointment_id,clinic_id,diagnosis,prescription,notes,created_by_doctor_id,created_at')
+                .in_('appointment_id', [int(x) for x in appt_ids])
+                .execute()
+            )
+            rows.extend(res_a.data or [])
+
         if clinic_ids:
-            or_parts.append('clinic_id=in.(' + ','.join([str(int(x)) for x in clinic_ids]) + ')')
-        q = q.or_(','.join(or_parts))
-        q = q.order('created_at', desc=True).range(offset, offset + page_size - 1)
-        res = q.execute()
+            res_c = (
+                client.table('medical_reports')
+                .select('report_id,appointment_id,clinic_id,diagnosis,prescription,notes,created_by_doctor_id,created_at')
+                .in_('clinic_id', [int(x) for x in clinic_ids])
+                .execute()
+            )
+            rows.extend(res_c.data or [])
 
-        count = getattr(res, 'count', None)
-        if count is None:
-            count = len(res.data) if res.data else 0
+        # De-duplicate and sort
+        uniq = {}
+        for r in rows:
+            rid = r.get('report_id')
+            if rid is None:
+                continue
+            uniq[str(rid)] = r
 
-        return jsonify({'success': True, 'data': res.data or [], 'count': count, 'page': page, 'page_size': page_size}), 200
+        merged = list(uniq.values())
+        merged.sort(key=lambda x: str(x.get('created_at') or ''), reverse=True)
+
+        # Enrich doctor info
+        doctor_ids = sorted({int(r.get('created_by_doctor_id')) for r in merged if r.get('created_by_doctor_id') is not None})
+        doctor_map = {}
+        if doctor_ids:
+            docs_res = (
+                client.table('doctors')
+                .select('doctor_id,full_name,specialization')
+                .in_('doctor_id', doctor_ids)
+                .execute()
+            )
+            for d in (docs_res.data or []):
+                if d.get('doctor_id') is None:
+                    continue
+                doctor_map[int(d['doctor_id'])] = d
+
+        for r in merged:
+            did = r.get('created_by_doctor_id')
+            if did is not None:
+                try:
+                    r['doctor_id'] = int(did)
+                except Exception:
+                    r['doctor_id'] = did
+                drow = doctor_map.get(int(did)) if str(did).isdigit() else None
+                r['doctors'] = {'full_name': drow.get('full_name'), 'specialization': drow.get('specialization')} if drow else None
+            else:
+                r['doctors'] = None
+
+        count = len(merged)
+        page_rows = merged[offset : offset + page_size]
+
+        return jsonify({'success': True, 'data': page_rows, 'count': count, 'page': page, 'page_size': page_size}), 200
 
     except Exception as e:
         logger.error(f"Doctor list reports error: {e}")
@@ -1465,34 +1505,161 @@ def doctor_list_prescription_records(patient_id: int):
         page_size = min(max(5, page_size), 100)
         offset = (page - 1) * page_size
 
-        appts = SupabaseClient.execute_query('appointments', 'select', columns='appointment_id', filter_patient_id=patient_id, limit=1000)
-        clinics = SupabaseClient.execute_query('clinic_participation', 'select', columns='clinic_id', filter_patient_id=patient_id, limit=1000)
-        appt_ids = [r['appointment_id'] for r in (appts.get('data') or []) if r.get('appointment_id') is not None]
-        clinic_ids = [r['clinic_id'] for r in (clinics.get('data') or []) if r.get('clinic_id') is not None]
-
-        if not appt_ids and not clinic_ids:
-            return jsonify({'success': True, 'data': [], 'count': 0, 'page': page, 'page_size': page_size}), 200
+        appts = SupabaseClient.execute_query('appointments', 'select', columns='appointment_id', filter_patient_id=patient_id, limit=2000)
+        clinics = SupabaseClient.execute_query('clinic_participation', 'select', columns='clinic_id', filter_patient_id=patient_id, limit=2000)
+        appt_ids = [r.get('appointment_id') for r in (appts.get('data') or []) if r.get('appointment_id') is not None]
+        clinic_ids = [r.get('clinic_id') for r in (clinics.get('data') or []) if r.get('clinic_id') is not None]
 
         client = SupabaseClient.get_client()
-        q = client.table('prescription_records').select(
-            'prescription_id,appointment_id,clinic_id,prescription_text,prescribed_by_doctor_id,created_at,doctors!prescription_records_prescribed_by_doctor_id_fkey(full_name,specialization)',
-            count='exact',
+
+        rows = []
+        if appt_ids:
+            res_a = (
+                client.table('prescription_records')
+                .select('prescription_id,appointment_id,clinic_id,prescription_text,prescribed_by_doctor_id,created_at')
+                .in_('appointment_id', [int(x) for x in appt_ids])
+                .execute()
+            )
+            rows.extend(res_a.data or [])
+
+        if clinic_ids:
+            res_c = (
+                client.table('prescription_records')
+                .select('prescription_id,appointment_id,clinic_id,prescription_text,prescribed_by_doctor_id,created_at')
+                .in_('clinic_id', [int(x) for x in clinic_ids])
+                .execute()
+            )
+            rows.extend(res_c.data or [])
+
+        # Also include medication prescriptions (doctor-added medicines) so they appear in Prescription Records
+        # even when they aren't linked to a specific appointment/clinic.
+        meds_res = (
+            client.table('medications')
+            .select(
+                'medication_id,doctor_id,medicine_name,dosage,frequency,times_per_day,specific_times,start_date,end_date,notes,prescribed_at,created_at,is_active'
+            )
+            .eq('patient_id', patient_id)
+            .order('created_at', desc=True)
+            .limit(2000)
+            .execute()
         )
 
-        or_parts = []
-        if appt_ids:
-            or_parts.append('appointment_id=in.(' + ','.join([str(int(x)) for x in appt_ids]) + ')')
-        if clinic_ids:
-            or_parts.append('clinic_id=in.(' + ','.join([str(int(x)) for x in clinic_ids]) + ')')
-        q = q.or_(','.join(or_parts))
-        q = q.order('created_at', desc=True).range(offset, offset + page_size - 1)
-        res = q.execute()
+        med_rows = meds_res.data or []
+        for m in med_rows:
+            mid = m.get('medication_id')
+            if mid is None:
+                continue
 
-        count = getattr(res, 'count', None)
-        if count is None:
-            count = len(res.data) if res.data else 0
+            medicine_name = (m.get('medicine_name') or '').strip()
+            dosage = (m.get('dosage') or '').strip()
+            frequency = (m.get('frequency') or '').strip()
+            times_per_day = m.get('times_per_day')
+            start_date = m.get('start_date')
+            end_date = m.get('end_date')
+            notes = (m.get('notes') or '').strip()
+            specific_times = m.get('specific_times')
 
-        return jsonify({'success': True, 'data': res.data or [], 'count': count, 'page': page, 'page_size': page_size}), 200
+            times_part = ''
+            try:
+                # specific_times can be a JSON string or a list
+                if isinstance(specific_times, str) and specific_times.strip():
+                    parsed = json.loads(specific_times)
+                    if isinstance(parsed, list) and parsed:
+                        times_part = ', '.join([str(x) for x in parsed if x is not None])
+                elif isinstance(specific_times, list) and specific_times:
+                    times_part = ', '.join([str(x) for x in specific_times if x is not None])
+            except Exception:
+                times_part = ''
+
+            detail_chunks = []
+            if medicine_name and dosage:
+                detail_chunks.append(f"{medicine_name} ({dosage})")
+            elif medicine_name:
+                detail_chunks.append(f"{medicine_name}")
+            elif dosage:
+                detail_chunks.append(f"Dosage: {dosage}")
+
+            if frequency:
+                detail_chunks.append(frequency)
+            if times_per_day is not None and str(times_per_day).strip() != '':
+                detail_chunks.append(f"{times_per_day}x/day")
+            if times_part:
+                detail_chunks.append(f"Times: {times_part}")
+            if start_date:
+                detail_chunks.append(f"Start: {start_date}")
+            if end_date:
+                detail_chunks.append(f"End: {end_date}")
+            if notes:
+                detail_chunks.append(f"Notes: {notes}")
+
+            prescription_text = ' | '.join(detail_chunks) if detail_chunks else 'Medication prescribed'
+
+            # Use negative IDs for medication-derived rows to avoid collision with real prescription_records IDs.
+            try:
+                pseudo_id = -int(mid)
+            except Exception:
+                continue
+
+            rows.append(
+                {
+                    'prescription_id': pseudo_id,
+                    'appointment_id': None,
+                    'clinic_id': None,
+                    'prescription_text': prescription_text,
+                    'prescribed_by_doctor_id': m.get('doctor_id'),
+                    'created_at': m.get('prescribed_at') or m.get('created_at'),
+                }
+            )
+
+        uniq = {}
+        for r in rows:
+            pid = r.get('prescription_id')
+            if pid is None:
+                continue
+            uniq[str(pid)] = r
+
+        merged = list(uniq.values())
+        merged.sort(key=lambda x: str(x.get('created_at') or ''), reverse=True)
+
+        doctor_ids_set = set()
+        for r in merged:
+            did = r.get('prescribed_by_doctor_id')
+            if did is None:
+                continue
+            try:
+                doctor_ids_set.add(int(did))
+            except Exception:
+                continue
+        doctor_ids = sorted(doctor_ids_set)
+        doctor_map = {}
+        if doctor_ids:
+            docs_res = (
+                client.table('doctors')
+                .select('doctor_id,full_name,specialization')
+                .in_('doctor_id', doctor_ids)
+                .execute()
+            )
+            for d in (docs_res.data or []):
+                if d.get('doctor_id') is None:
+                    continue
+                doctor_map[int(d['doctor_id'])] = d
+
+        for r in merged:
+            did = r.get('prescribed_by_doctor_id')
+            if did is not None:
+                try:
+                    r['doctor_id'] = int(did)
+                except Exception:
+                    r['doctor_id'] = did
+                drow = doctor_map.get(int(did)) if str(did).isdigit() else None
+                r['doctors'] = {'full_name': drow.get('full_name'), 'specialization': drow.get('specialization')} if drow else None
+            else:
+                r['doctors'] = None
+
+        count = len(merged)
+        page_rows = merged[offset : offset + page_size]
+
+        return jsonify({'success': True, 'data': page_rows, 'count': count, 'page': page, 'page_size': page_size}), 200
 
     except Exception as e:
         logger.error(f"Doctor list prescription records error: {e}")

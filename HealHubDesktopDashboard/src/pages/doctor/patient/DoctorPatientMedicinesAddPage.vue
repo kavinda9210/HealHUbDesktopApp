@@ -17,7 +17,7 @@ const createMed = ref({
   dosage: '',
   frequency: 'Daily',
   times_per_day: 1,
-  specific_times_json: '[]',
+  specific_times_text: '',
   start_date: '',
   end_date: '',
   next_clinic_date: '',
@@ -33,6 +33,40 @@ async function submitMed() {
     return
   }
 
+  const rawTimes = String(createMed.value.specific_times_text || '').trim()
+  let specificTimes: string[] = []
+  if (rawTimes) {
+    try {
+      if (rawTimes.startsWith('[')) {
+        const parsed = JSON.parse(rawTimes)
+        if (!Array.isArray(parsed)) {
+          toast.show('Specific times must be a list of times like 08:00, 20:00', 'error')
+          return
+        }
+        specificTimes = parsed.map((x) => String(x).trim()).filter(Boolean)
+      } else {
+        specificTimes = rawTimes
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean)
+      }
+
+      const isValid = (t: string) => {
+        const m = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(t)
+        return Boolean(m)
+      }
+      for (const t of specificTimes) {
+        if (!isValid(t)) {
+          toast.show('Invalid time format. Use HH:MM, e.g. 08:00', 'error')
+          return
+        }
+      }
+    } catch {
+      toast.show('Specific times must be like 08:00, 20:00', 'error')
+      return
+    }
+  }
+
   isSaving.value = true
   try {
     await api.post(
@@ -42,7 +76,7 @@ async function submitMed() {
         dosage: createMed.value.dosage,
         frequency: createMed.value.frequency,
         times_per_day: Number(createMed.value.times_per_day) || 1,
-        specific_times: createMed.value.specific_times_json,
+        specific_times: JSON.stringify(specificTimes),
         start_date: createMed.value.start_date,
         end_date: createMed.value.end_date || null,
         next_clinic_date: createMed.value.next_clinic_date || null,
@@ -96,8 +130,8 @@ async function submitMed() {
       </div>
 
       <div class="md:col-span-2">
-        <label class="block text-xs text-gray-500 dark:text-gray-400">Specific times (JSON array, optional)</label>
-        <input v-model="createMed.specific_times_json" class="mt-1 w-full rounded border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-950" placeholder='["08:00","20:00"]' />
+        <label class="block text-xs text-gray-500 dark:text-gray-400">Specific times (optional)</label>
+        <input v-model="createMed.specific_times_text" class="mt-1 w-full rounded border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-950" placeholder="08:00, 20:00" />
       </div>
       <div>
         <label class="block text-xs text-gray-500 dark:text-gray-400">Start date</label>

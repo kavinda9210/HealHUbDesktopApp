@@ -35,8 +35,10 @@ const isLoadingReportLinks = ref(false)
 const reportLinksError = ref<string | null>(null)
 const isSaving = ref(false)
 
-const hasAppointment = computed(() => createReport.value.link_type === 'appointment' && Boolean(createReport.value.appointment_id))
-const hasClinic = computed(() => createReport.value.link_type === 'clinic' && Boolean(createReport.value.clinic_id))
+const hasAppointment = computed(
+  () => createReport.value.link_type === 'appointment' && Boolean(String(createReport.value.appointment_id || '').trim()),
+)
+const hasClinic = computed(() => createReport.value.link_type === 'clinic' && Boolean(String(createReport.value.clinic_id || '').trim()))
 
 async function loadReportLinks() {
   isLoadingReportLinks.value = true
@@ -53,8 +55,21 @@ async function loadReportLinks() {
       }),
     ])
 
-    reportAppointments.value = (appts.data || []).filter((a) => a.patient_id === ctx.patientId.value)
+    reportAppointments.value = appts.data || []
     reportClinics.value = cls.data || []
+
+    // Make it easy to create a report by preselecting a valid link target.
+    if (!String(createReport.value.appointment_id || '').trim() && !String(createReport.value.clinic_id || '').trim()) {
+      const firstAppt = reportAppointments.value[0]
+      const firstClinic = reportClinics.value[0]
+      if (firstAppt) {
+        createReport.value.link_type = 'appointment'
+        createReport.value.appointment_id = String(firstAppt.appointment_id)
+      } else if (firstClinic) {
+        createReport.value.link_type = 'clinic'
+        createReport.value.clinic_id = String(firstClinic.clinic_id)
+      }
+    }
   } catch (e) {
     reportLinksError.value = e instanceof ApiError ? e.message : 'Failed to load appointment/clinic links'
   } finally {
@@ -63,7 +78,9 @@ async function loadReportLinks() {
 }
 
 async function submitReport() {
-  if (!createReport.value.diagnosis || !createReport.value.prescription || (!hasAppointment.value && !hasClinic.value)) {
+  const diagnosis = String(createReport.value.diagnosis || '').trim()
+  const prescription = String(createReport.value.prescription || '').trim()
+  if (!diagnosis || !prescription || (!hasAppointment.value && !hasClinic.value)) {
     toast.show('Diagnosis, prescription, and a link target are required', 'error')
     return
   }
@@ -71,8 +88,8 @@ async function submitReport() {
   isSaving.value = true
   try {
     const body: any = {
-      diagnosis: createReport.value.diagnosis,
-      prescription: createReport.value.prescription,
+      diagnosis,
+      prescription,
       notes: createReport.value.notes || null,
     }
     if (createReport.value.link_type === 'appointment') body.appointment_id = Number(createReport.value.appointment_id)
