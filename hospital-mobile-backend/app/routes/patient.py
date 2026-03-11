@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, timedelta, time
 from flask import Blueprint, request, jsonify, current_app
 from flask_jwt_extended import jwt_required, get_jwt_identity
 import math
@@ -12,7 +12,7 @@ from app.models.medical_models import (
 from app.models.user_models import PatientResponse
 from app.utils.supabase_client import SupabaseClient, get_user_by_id
 from app.utils.email_service import EmailService
-from app.utils.time_utils import sl_today_iso, sl_now_iso, sl_today
+from app.utils.time_utils import sl_today_iso, sl_now_iso, sl_today, sl_now
 from app.realtime import emit_user_invalidate, emit_patient_invalidate
 
 logger = logging.getLogger(__name__)
@@ -587,7 +587,52 @@ def get_medicine_reminders():
         
         # Sort by time
         reminders = result['data'] or []
-        reminders.sort(key=lambda x: x['reminder_time'])
+        reminders.sort(key=lambda x: x.get('reminder_time') or '')
+
+        # Enrich with medication + doctor details
+        try:
+            meds_res = SupabaseClient.execute_query(
+                'patient_medications',
+                'select',
+                filter_patient_id=patient_id,
+                columns='medication_id,medicine_name,dosage,frequency,notes,doctor_id,doctors(full_name,specialization)',
+                limit=1000,
+            )
+            meds_by_id = {}
+            if meds_res.get('success') and meds_res.get('data'):
+                for m in meds_res['data']:
+                    mid = m.get('medication_id')
+                    if mid is None:
+                        continue
+                    try:
+                        meds_by_id[int(mid)] = m
+                    except Exception:
+                        continue
+
+            enriched = []
+            for r in reminders:
+                item = dict(r)
+                mid = r.get('medication_id')
+                med = None
+                try:
+                    med = meds_by_id.get(int(mid)) if mid is not None else None
+                except Exception:
+                    med = None
+
+                if med:
+                    item['medicine_name'] = med.get('medicine_name')
+                    item['dosage'] = med.get('dosage')
+                    item['frequency'] = med.get('frequency')
+                    item['notes'] = med.get('notes')
+                    docs = med.get('doctors') or {}
+                    if isinstance(docs, dict):
+                        item['doctor_name'] = docs.get('full_name')
+                        item['doctor_specialization'] = docs.get('specialization')
+                enriched.append(item)
+
+            reminders = enriched
+        except Exception:
+            pass
         
         return jsonify({
             'success': True,
@@ -648,7 +693,7 @@ def get_upcoming_medicine_reminders():
             'patient_medications',
             'select',
             filter_patient_id=patient_id,
-            columns='medication_id,medicine_name,dosage,frequency',
+            columns='medication_id,medicine_name,dosage,frequency,notes,doctor_id,doctors(full_name,specialization)',
             limit=1000,
         )
         meds_by_id = {}
@@ -664,6 +709,11 @@ def get_upcoming_medicine_reminders():
                 item['medicine_name'] = med.get('medicine_name')
                 item['dosage'] = med.get('dosage')
                 item['frequency'] = med.get('frequency')
+                item['notes'] = med.get('notes')
+                docs = med.get('doctors') or {}
+                if isinstance(docs, dict):
+                    item['doctor_name'] = docs.get('full_name')
+                    item['doctor_specialization'] = docs.get('specialization')
             enriched.append(item)
 
         return jsonify({'success': True, 'data': enriched, 'count': len(enriched), 'days': days}), 200
@@ -686,6 +736,47 @@ def mark_medicine_taken(reminder_id: int):
                 'message': 'Patient profile not found'
             }), 404
         
+        # Prevent taking future/upcoming reminders (server-side enforcement)
+        try:
+            reminder_res = SupabaseClient.execute_query(
+                'medicine_reminders',
+                'select',
+                filter_reminder_id=reminder_id,
+                filter_patient_id=patient_id,
+                limit=1,
+            )
+            reminder_row = (reminder_res.get('data') or [{}])[0] if reminder_res.get('success') else None
+            if not reminder_row or not reminder_row.get('reminder_date') or not reminder_row.get('reminder_time'):
+                return jsonify({'success': False, 'message': 'Reminder not found'}), 404
+
+            reminder_date = str(reminder_row.get('reminder_date'))
+            reminder_time_raw = str(reminder_row.get('reminder_time'))
+
+            # Normalize reminder_time to HH:MM[:SS]
+            reminder_time_text = reminder_time_raw.strip()
+            if 'T' in reminder_time_text:
+                # Defensive: if a datetime string sneaks in, keep only the time part
+                reminder_time_text = reminder_time_text.split('T', 1)[-1]
+            if '+' in reminder_time_text:
+                reminder_time_text = reminder_time_text.split('+', 1)[0]
+            if 'Z' in reminder_time_text:
+                reminder_time_text = reminder_time_text.replace('Z', '')
+
+            parsed_time: time
+            try:
+                parsed_time = datetime.strptime(reminder_time_text[:8], '%H:%M:%S').time()
+            except Exception:
+                parsed_time = datetime.strptime(reminder_time_text[:5], '%H:%M').time()
+
+            now = sl_now()
+            scheduled_dt = datetime.combine(date.fromisoformat(reminder_date), parsed_time, tzinfo=now.tzinfo)
+            if now < scheduled_dt:
+                return jsonify({'success': False, 'message': 'Cannot mark as taken before scheduled time'}), 400
+        except Exception:
+            # If validation fails for any unexpected format, fall back to old behavior
+            # (avoid breaking marking taken entirely)
+            pass
+
         # Update reminder status
         result = SupabaseClient.execute_query(
             'medicine_reminders',
@@ -701,6 +792,13 @@ def mark_medicine_taken(reminder_id: int):
                 'success': False,
                 'message': 'Failed to update reminder'
             }), 500
+
+        # Real-time UI refresh (patient)
+        try:
+            emit_patient_invalidate(int(patient_id), topics=['patient:medications', 'patient:dashboard'])
+            emit_user_invalidate(str(current_user_id), topics=['patient:medications', 'patient:dashboard'])
+        except Exception:
+            pass
         
         return jsonify({
             'success': True,

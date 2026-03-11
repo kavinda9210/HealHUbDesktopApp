@@ -1,12 +1,12 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, StyleSheet, StatusBar, TouchableOpacity, ScrollView, TextInput, Platform } from 'react-native';
+import { View, Text, StyleSheet, StatusBar, TouchableOpacity, ScrollView, TextInput, Platform, Modal, Pressable } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import PatientTabs, { PatientTabKey } from '../components/patient/tabs';
 import { useLanguage } from '../context/LanguageContext';
 import { useTheme } from '../context/ThemeContext';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import AlertMessage from '../components/alerts/AlertMessage';
-import { cancelAlarmAsync, scheduleAlarmAtAsync } from '../utils/alarms';
+import { cancelAlarmAsync, cancelScheduledAlarmsByKeyAsync, scheduleAlarmAtAsync, scheduleCallLikeAlarmBurstAsync } from '../utils/alarms';
 import { kvGet, kvSet } from '../utils/kvStorage';
 
 import ProfileViewCard, { PatientUser } from '../components/patient/profile/ProfileViewCard';
@@ -83,6 +83,11 @@ type MedicineReminderRow = {
   reminder_date: string;
   reminder_time: string;
   status: string;
+  medicine_name?: string | null;
+  dosage?: string | null;
+  notes?: string | null;
+  doctor_name?: string | null;
+  doctor_specialization?: string | null;
 };
 
 type MedicalReportRow = {
@@ -99,18 +104,30 @@ type MedicalReportRow = {
 
 type PatientdashboardProps = {
   accessToken?: string;
+  pendingMedicineTake?:
+    | null
+    | {
+        reminderId: number;
+        medicineName?: string;
+        dosage?: string;
+        reminderDate?: string;
+        reminderTime?: string;
+        alarmKey?: string;
+      };
+  onConsumePendingMedicineTake?: () => void;
   onOpenAiDetect?: () => void;
   onOpenNotifications?: () => void;
   onOpenNearbyAmbulance?: () => void;
   onLogout?: () => void;
 };
 
-export default function Patientdashboard({ accessToken, onOpenAiDetect, onOpenNotifications, onOpenNearbyAmbulance, onLogout }: PatientdashboardProps) {
+export default function Patientdashboard({ accessToken, pendingMedicineTake, onConsumePendingMedicineTake, onOpenAiDetect, onOpenNotifications, onOpenNearbyAmbulance, onLogout }: PatientdashboardProps) {
   const { language } = useLanguage();
   const { colors, mode } = useTheme();
   const [activeTab, setActiveTab] = useState<PatientTabKey>('home');
 
   const reminderToastTimer = useRef<NodeJS.Timeout | null>(null);
+  const medicineScrollRef = useRef<ScrollView | null>(null);
   const [reminderToastVisible, setReminderToastVisible] = useState(false);
   const [reminderToastVariant, setReminderToastVariant] = useState<'success' | 'error' | 'info'>('success');
   const [reminderToastMessage, setReminderToastMessage] = useState('');
@@ -150,13 +167,29 @@ export default function Patientdashboard({ accessToken, onOpenAiDetect, onOpenNo
 
   const [notificationCount, setNotificationCount] = useState<number>(0);
 
+  const [medicineClockTick, setMedicineClockTick] = useState(0);
+
   const [homeMedicines, setHomeMedicines] = useState<Array<{ id: string; name: string; time: string; note: string }>>([]);
   const [todayMedicineReminders, setTodayMedicineReminders] = useState<
-    Array<{ id: string; name: string; time: string; note: string }>
+    Array<{ id: string; name: string; date: string; time: string; dosage: string; description: string; doctor: string }>
   >([]);
   const [futureMedicineReminders, setFutureMedicineReminders] = useState<
-    Array<{ id: string; name: string; when: string; note: string }>
+    Array<{ id: string; name: string; date: string; time: string; when: string; dosage: string; description: string; doctor: string }>
   >([]);
+  const [medicineDetailsCard, setMedicineDetailsCard] = useState<
+    null | { name: string; date: string; time: string; dosage?: string; description?: string; doctor?: string }
+  >(null);
+  const [takeMedicineCard, setTakeMedicineCard] = useState<
+    | null
+    | {
+        reminderId: number;
+        medicineName?: string;
+        dosage?: string;
+        reminderDate?: string;
+        reminderTime?: string;
+        alarmKey?: string;
+      }
+  >(null);
   const [homeClinics, setHomeClinics] = useState<Array<{ id: string; title: string; when: string; where: string }>>([]);
   const [homeRecentAppointments, setHomeRecentAppointments] = useState<
     Array<{ id: string; doctor: string; date: string; time: string; status: string }>
@@ -286,9 +319,9 @@ export default function Patientdashboard({ accessToken, onOpenAiDetect, onOpenNo
     upcomingReminders: Array<any>;
     doctorMap: Record<number, DoctorRow>;
   }) => {
-    const STORAGE_KEY = 'patient_alarm_schedule_v1';
+    const STORAGE_KEY = 'patient_alarm_schedule_v2';
     try {
-      const desired: Array<{ key: string; title: string; body: string; date: Date }> = [];
+      const desired: Array<{ key: string; title: string; body: string; date: Date; data?: any }> = [];
       const now = Date.now();
 
       for (const r of input.upcomingReminders) {
@@ -304,6 +337,14 @@ export default function Patientdashboard({ accessToken, onOpenAiDetect, onOpenNo
           title: language === 'sinhala' ? 'ඖෂධ මතක් කිරීම' : language === 'tamil' ? 'மருந்து நினைவூட்டல்' : 'Medicine reminder',
           body: dosage ? `${medicineName} • ${dosage} • ${when}` : `${medicineName} • ${when}`,
           date: dt,
+          data: {
+            reminderId: r.reminder_id,
+            medicationId: r.medication_id,
+            medicineName,
+            dosage,
+            reminderDate: r.reminder_date,
+            reminderTime: r.reminder_time,
+          },
         });
       }
 
@@ -332,38 +373,57 @@ export default function Patientdashboard({ accessToken, onOpenAiDetect, onOpenNo
       const desiredKeys = new Set(limited.map((d) => d.key));
 
       const storedRaw = await kvGet(STORAGE_KEY);
-      let stored: Record<string, string> = {};
+      let storedKeys: string[] = [];
       if (storedRaw) {
         try {
-          stored = JSON.parse(storedRaw) as Record<string, string>;
+          storedKeys = JSON.parse(storedRaw) as string[];
         } catch {
-          stored = {};
+          storedKeys = [];
         }
       }
 
+      const storedSet = new Set(storedKeys);
+
       // Cancel alarms that are no longer desired
-      for (const [key, notifId] of Object.entries(stored)) {
+      for (const key of storedKeys) {
         if (desiredKeys.has(key)) continue;
         try {
-          await cancelAlarmAsync(notifId);
+          await cancelScheduledAlarmsByKeyAsync(key);
         } catch (e) {
-          console.log('cancelAlarmAsync failed:', e);
+          console.log('cancelScheduledAlarmsByKeyAsync failed:', e);
         }
-        delete stored[key];
+        storedSet.delete(key);
       }
 
       // Schedule missing
       for (const d of limited) {
-        if (stored[d.key]) continue;
+        if (storedSet.has(d.key)) continue;
         try {
-          const res = await scheduleAlarmAtAsync({ title: d.title, body: d.body, date: d.date });
-          stored[d.key] = res.id;
+          const secondsUntil = Math.floor((d.date.getTime() - Date.now()) / 1000);
+          const isMedicine = String(d.key).startsWith('med:');
+          const isNearTerm = secondsUntil > 0 && secondsUntil <= 12 * 60 * 60;
+
+          if (isMedicine && isNearTerm) {
+            // Burst so it keeps sounding/vibrating until patient taps Stop (or burst ends)
+            await scheduleCallLikeAlarmBurstAsync({
+              title: d.title,
+              body: d.body,
+              startInSeconds: secondsUntil,
+              repeatEverySeconds: 6,
+              repeatCount: 15,
+              data: { alarmKey: d.key, ...(d.data ?? {}) },
+            });
+          } else {
+            await scheduleAlarmAtAsync({ title: d.title, body: d.body, date: d.date, data: { alarmKey: d.key, ...(d.data ?? {}) } });
+          }
+
+          storedSet.add(d.key);
         } catch (e) {
           console.log('scheduleAlarmAtAsync (auto) failed:', e);
         }
       }
 
-      await kvSet(STORAGE_KEY, JSON.stringify(stored));
+      await kvSet(STORAGE_KEY, JSON.stringify(Array.from(storedSet)));
     } catch (e) {
       console.log('reconcilePatientAlarmScheduleAsync failed:', e);
     }
@@ -408,6 +468,14 @@ export default function Patientdashboard({ accessToken, onOpenAiDetect, onOpenNo
     const mm = String(d.getMonth() + 1).padStart(2, '0');
     const dd = String(d.getDate()).padStart(2, '0');
     return `${yyyy}-${mm}-${dd}`;
+  };
+
+  const computeMedicineAlarmKey = (input: { reminderId: number | string; date: string; time: string }) => {
+    const rid = String(input.reminderId || '').trim();
+    const dateText = String(input.date || '').trim();
+    const timeText = String(input.time || '').trim().slice(0, 5);
+    if (!rid || !dateText || !timeText) return '';
+    return `med:${rid}:${dateText} ${timeText}`;
   };
 
   const buildAppointmentDateTime = (d: Date | null, t: Date | null) => {
@@ -638,35 +706,74 @@ export default function Patientdashboard({ accessToken, onOpenAiDetect, onOpenNo
         .filter((r) => String(r.reminder_date || '') === todayText)
         .map((r) => {
           const med = medsById[r.medication_id];
+          const name =
+            (r as any).medicine_name && String((r as any).medicine_name).trim()
+              ? String((r as any).medicine_name)
+              : med?.medicine_name
+                ? String(med.medicine_name)
+                : `Medicine #${r.medication_id}`;
+          const dosage = (r as any).dosage ? String((r as any).dosage) : med?.dosage ? String(med.dosage) : '';
+          const description = (r as any).notes ? String((r as any).notes) : '';
+          const doctor = (r as any).doctor_name ? `Dr. ${String((r as any).doctor_name)}` : '';
           return {
             id: String(r.reminder_id),
-            name: med?.medicine_name ? String(med.medicine_name) : `Medicine #${r.medication_id}`,
+            name,
+            date: todayText,
             time: String(r.reminder_time).slice(0, 5),
-            note: med?.dosage ? String(med.dosage) : '',
+            dosage,
+            description,
+            doctor,
           };
         });
 
-      const futureItems = pending
-        .filter((r) => {
-          const dateText = String(r.reminder_date || '');
-          return dateText && dateText > todayText;
-        })
-        .map((r) => {
-          const med = medsById[r.medication_id];
-          const when = `${String(r.reminder_date || '')} ${String(r.reminder_time || '').slice(0, 5)}`;
-          return {
-            id: String(r.reminder_id),
-            name: med?.medicine_name ? String(med.medicine_name) : `Medicine #${r.medication_id}`,
-            when,
-            note: med?.dosage ? String(med.dosage) : '',
-          };
-        });
+      // Future reminders come from upcoming endpoint so we can show real future days.
+      let futureItems: Array<{ id: string; name: string; date: string; time: string; when: string; dosage: string; description: string; doctor: string }> = [];
+      try {
+        const upcomingRes = await apiGet<any>('/api/patient/medicine-reminders/upcoming?days=7', accessToken);
+        const upcoming: any[] = Array.isArray(upcomingRes.data?.data) ? upcomingRes.data.data : [];
+        futureItems = upcoming
+          .filter((r) => String(r.status || '').toLowerCase() === 'pending')
+          .filter((r) => {
+            const dateText = String(r.reminder_date || '');
+            return dateText && dateText > todayText;
+          })
+          .slice(0, 25)
+          .map((r) => {
+            const medicineName = String(r.medicine_name || '').trim() || `Medicine #${String(r.medication_id || '')}`;
+            const dosage = String(r.dosage || '').trim();
+            const description = String(r.notes || '').trim();
+            const doctor = r.doctor_name ? `Dr. ${String(r.doctor_name)}` : '';
+            const dateText = String(r.reminder_date || '');
+            const timeText = String(r.reminder_time || '').slice(0, 5);
+            const when = `${dateText} ${timeText}`;
+            return {
+              id: String(r.reminder_id),
+              name: medicineName,
+              date: dateText,
+              time: timeText,
+              when,
+              dosage,
+              description,
+              doctor,
+            };
+          });
+      } catch (e) {
+        console.log('load upcoming reminders for future list failed:', e);
+        futureItems = [];
+      }
 
       setTodayMedicineReminders(todayItems);
       setFutureMedicineReminders(futureItems);
 
       // Home shows a compact version (today reminders first)
-      setHomeMedicines(todayItems.slice(0, 6));
+      setHomeMedicines(
+        todayItems.slice(0, 6).map((m) => ({
+          id: m.id,
+          name: m.name,
+          time: m.time,
+          note: [m.dosage, m.description].filter(Boolean).join(' • '),
+        }))
+      );
 
       // Auto-schedule alarms for upcoming reminders + clinics
       try {
@@ -805,6 +912,69 @@ export default function Patientdashboard({ accessToken, onOpenAiDetect, onOpenNo
     showReminderToast('error', profileLoadError);
   }, [profileLoadError]);
 
+  useEffect(() => {
+    if (!pendingMedicineTake) return;
+    if (!pendingMedicineTake.reminderId) return;
+    setActiveTab('medicine');
+    setTakeMedicineCard(pendingMedicineTake);
+    onConsumePendingMedicineTake?.();
+  }, [pendingMedicineTake, onConsumePendingMedicineTake]);
+
+  useEffect(() => {
+    if (activeTab !== 'medicine') return;
+    if (!takeMedicineCard) return;
+    medicineScrollRef.current?.scrollTo({ y: 0, animated: true });
+  }, [activeTab, takeMedicineCard]);
+
+  useEffect(() => {
+    if (activeTab !== 'medicine') return;
+    const t = setInterval(() => setMedicineClockTick((x) => x + 1), 30_000);
+    return () => clearInterval(t);
+  }, [activeTab]);
+
+  const markReminderTakenAsync = async (input: { reminderId: number; alarmKey?: string }) => {
+    try {
+      if (!accessToken) {
+        showReminderToast('error', 'Not authenticated');
+        return false;
+      }
+
+      const reminderId = Number(input.reminderId);
+      if (!Number.isFinite(reminderId) || reminderId <= 0) return false;
+
+      const res = await apiPost<any>(`/api/patient/medicine-reminders/${reminderId}/mark-taken`, {}, accessToken);
+      if (!res.ok || !res.data?.success) {
+        const msg = (res.data && (res.data.message || res.data.error)) || 'Failed to mark medicine taken';
+        showReminderToast('error', String(msg));
+        return false;
+      }
+
+      const rid = String(reminderId);
+      setTodayMedicineReminders((prev) => prev.filter((x) => String(x.id) !== rid));
+      setFutureMedicineReminders((prev) => prev.filter((x) => String(x.id) !== rid));
+      setHomeMedicines((prev) => prev.filter((x) => String(x.id) !== rid));
+
+      if (input.alarmKey) {
+        try {
+          await cancelScheduledAlarmsByKeyAsync(String(input.alarmKey));
+        } catch {
+          // ignore
+        }
+      }
+
+      setRealtimeHomeTick((x) => x + 1);
+      showReminderToast(
+        'success',
+        language === 'sinhala' ? 'ඖෂධ ගත්තා ලෙස සලකුණු කළා.' : language === 'tamil' ? 'மருந்து எடுத்ததாக குறிக்கப்பட்டது.' : 'Marked as taken.'
+      );
+      return true;
+    } catch (e) {
+      console.log('markReminderTakenAsync failed:', e);
+      showReminderToast('error', 'Failed to mark medicine taken');
+      return false;
+    }
+  };
+
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top', 'bottom']}>
       <StatusBar barStyle={mode === 'dark' ? 'light-content' : 'dark-content'} backgroundColor={colors.background} translucent={false} />
@@ -816,6 +986,87 @@ export default function Patientdashboard({ accessToken, onOpenAiDetect, onOpenNo
         message={reminderToastMessage}
         onClose={() => setReminderToastVisible(false)}
       />
+
+      <Modal
+        visible={!!medicineDetailsCard}
+        transparent
+        animationType="fade"
+        presentationStyle="overFullScreen"
+        statusBarTranslucent
+        hardwareAccelerated
+        onRequestClose={() => setMedicineDetailsCard(null)}
+      >
+        <View style={styles.modalWrap}>
+          <Pressable style={StyleSheet.absoluteFillObject} onPress={() => setMedicineDetailsCard(null)}>
+            <View
+              style={[
+                StyleSheet.absoluteFillObject,
+                {
+                  backgroundColor: mode === 'light' ? colors.text : colors.background,
+                  opacity: mode === 'light' ? 0.35 : 0.78,
+                },
+              ]}
+            />
+          </Pressable>
+
+          <View
+            style={[
+              styles.modalCard,
+              {
+                backgroundColor: colors.card,
+                borderColor: colors.border,
+                shadowColor: mode === 'light' ? colors.text : colors.background,
+              },
+            ]}
+          >
+            <View style={styles.modalHeaderRow}>
+              <Text style={[styles.sectionTitle, { color: colors.text, marginBottom: 0, flex: 1 }]}>
+                {language === 'sinhala'
+                  ? 'ඖෂධ විස්තර'
+                  : language === 'tamil'
+                    ? 'மருந்து விவரங்கள்'
+                    : 'Medicine details'}
+              </Text>
+              <TouchableOpacity
+                activeOpacity={0.85}
+                onPress={() => setMedicineDetailsCard(null)}
+                style={[styles.smallPill, { borderColor: colors.border }]}
+              >
+                <Text style={[styles.smallPillText, { color: colors.subtext }]}>
+                  {language === 'sinhala' ? 'වසන්න' : language === 'tamil' ? 'மூடு' : 'Close'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            <Text style={[styles.cardText, { color: colors.subtext, marginTop: 10 }]}>
+              {[
+                medicineDetailsCard?.name ? String(medicineDetailsCard.name) : '',
+                medicineDetailsCard?.date && medicineDetailsCard?.time ? `${medicineDetailsCard.date} ${medicineDetailsCard.time}` : '',
+              ]
+                .filter(Boolean)
+                .join(' • ')}
+            </Text>
+
+            {!!medicineDetailsCard?.dosage && (
+              <Text style={[styles.cardText, { color: colors.subtext, marginTop: 6 }]}>
+                {(language === 'sinhala' ? 'ඩෝස්: ' : language === 'tamil' ? 'அளவு: ' : 'Dosage: ') + String(medicineDetailsCard.dosage)}
+              </Text>
+            )}
+
+            {!!medicineDetailsCard?.description && (
+              <Text style={[styles.cardText, { color: colors.subtext, marginTop: 6 }]}>
+                {(language === 'sinhala' ? 'විස්තර: ' : language === 'tamil' ? 'விளக்கம்: ' : 'Description: ') + String(medicineDetailsCard.description)}
+              </Text>
+            )}
+
+            {!!medicineDetailsCard?.doctor && (
+              <Text style={[styles.cardText, { color: colors.subtext, marginTop: 6 }]}>
+                {(language === 'sinhala' ? 'එක් කළ වෛද්‍යවරයා: ' : language === 'tamil' ? 'சேர்த்த மருத்துவர்: ' : 'Added by: ') + String(medicineDetailsCard.doctor)}
+              </Text>
+            )}
+          </View>
+        </View>
+      </Modal>
 
       <View style={[styles.header, { borderBottomColor: colors.border }]}> 
         <View style={styles.headerTop}>
@@ -1363,31 +1614,188 @@ export default function Patientdashboard({ accessToken, onOpenAiDetect, onOpenNo
             </View>
           </ScrollView>
         ) : activeTab === 'medicine' ? (
-          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+          <ScrollView ref={medicineScrollRef} showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+            {!!takeMedicineCard && (
+              <View style={[styles.sectionCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                <Text style={[styles.sectionTitle, { color: colors.text }]}>
+                  {language === 'sinhala' ? 'ඖෂධ ගන්න' : language === 'tamil' ? 'மருந்தை எடுத்துக்கொள்' : 'Take medicine'}
+                </Text>
+                <Text style={[styles.cardText, { color: colors.subtext }]}>
+                  {[
+                    takeMedicineCard.medicineName ? String(takeMedicineCard.medicineName) : '',
+                    takeMedicineCard.dosage ? String(takeMedicineCard.dosage) : '',
+                    takeMedicineCard.reminderDate && takeMedicineCard.reminderTime
+                      ? `${String(takeMedicineCard.reminderDate)} ${String(takeMedicineCard.reminderTime).slice(0, 5)}`
+                      : takeMedicineCard.reminderTime
+                        ? String(takeMedicineCard.reminderTime).slice(0, 5)
+                        : '',
+                  ]
+                    .filter(Boolean)
+                    .join(' • ') ||
+                    (language === 'sinhala' ? 'ඖෂධ විස්තර ලබාගැනෙමින්...' : language === 'tamil' ? 'மருந்து விவரங்கள் ஏற்றப்படுகிறது...' : 'Loading medicine details...')}
+                </Text>
+
+                <TouchableOpacity
+                  activeOpacity={0.85}
+                  style={[styles.primaryAction, { backgroundColor: colors.primary }]}
+                  onPress={() => {
+                    void (async () => {
+                      try {
+                        const ok = await markReminderTakenAsync({
+                          reminderId: Number(takeMedicineCard.reminderId),
+                          alarmKey: takeMedicineCard.alarmKey ? String(takeMedicineCard.alarmKey) : undefined,
+                        });
+                        if (!ok) return;
+                        setTakeMedicineCard(null);
+                      } catch (e) {
+                        console.log('mark-taken failed:', e);
+                        showReminderToast('error', 'Failed to mark medicine taken');
+                      }
+                    })();
+                  }}
+                >
+                  <Text style={styles.primaryActionText}>
+                    {language === 'sinhala' ? 'ගත්තා' : language === 'tamil' ? 'எடுத்தேன்' : 'Taken'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
             <View style={[styles.sectionCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
               <Text style={[styles.sectionTitle, { color: colors.text }]}>
-                {language === 'sinhala' ? 'අද ඖෂධ' : language === 'tamil' ? 'இன்றைய மருந்துகள்' : 'Today medicines'}
+                {language === 'sinhala' ? 'මඟහැරුණු ඖෂධ' : language === 'tamil' ? 'தவறிய மருந்துகள்' : 'Missed medicines'}
               </Text>
 
-              {todayMedicineReminders.map((m) => (
-                <View key={m.id} style={[styles.itemRow, { borderTopColor: colors.border }]}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.itemTitle, { color: colors.text }]}>{m.name}</Text>
-                    <Text style={[styles.itemSub, { color: colors.subtext }]}>{m.note}</Text>
-                  </View>
-                  <Text style={[styles.itemRight, { color: colors.primary }]}>{m.time}</Text>
-                </View>
-              ))}
+              {(() => {
+                const _tick = medicineClockTick;
+                const now = new Date(Date.now() + _tick * 0);
+                const nowMinutes = now.getHours() * 60 + now.getMinutes();
+                const graceMinutes = 2;
+                const missed = todayMedicineReminders.filter((m) => {
+                  const tp = parseTimeParts(m.time);
+                  if (!tp) return false;
+                  const mins = tp.hour * 60 + tp.minute;
+                  return mins < nowMinutes - graceMinutes;
+                });
 
-              {todayMedicineReminders.length === 0 && (
-                <Text style={[styles.cardText, { color: colors.subtext, marginTop: 8 }]}>
-                  {language === 'sinhala'
-                    ? 'අද සඳහා ඖෂධ මතක් කිරීම් නැත.'
-                    : language === 'tamil'
-                      ? 'இன்றைக்கு மருந்து நினைவூட்டல்கள் இல்லை.'
-                      : 'No medicine reminders for today.'}
-                </Text>
-              )}
+                if (missed.length === 0) {
+                  return (
+                    <Text style={[styles.cardText, { color: colors.subtext, marginTop: 8 }]}>
+                      {language === 'sinhala'
+                        ? 'මඟහැරුණු ඖෂධ නැත.'
+                        : language === 'tamil'
+                          ? 'தவறிய மருந்துகள் இல்லை.'
+                          : 'No missed medicines.'}
+                    </Text>
+                  );
+                }
+
+                return (
+                  <>
+                    {missed.map((m) => {
+                      const alarmKey = computeMedicineAlarmKey({ reminderId: m.id, date: m.date, time: m.time });
+                      return (
+                        <View key={m.id} style={[styles.itemRow, { borderTopColor: colors.border }]}>
+                          <TouchableOpacity
+                            activeOpacity={0.8}
+                            style={{ flex: 1 }}
+                            onPress={() => {
+                              setMedicineDetailsCard({
+                                name: m.name,
+                                date: m.date,
+                                time: m.time,
+                                dosage: m.dosage,
+                                description: m.description,
+                                doctor: m.doctor,
+                              });
+                            }}
+                          >
+                            <Text style={[styles.itemTitle, { color: colors.text }]}>{m.name}</Text>
+                            <Text style={[styles.itemSub, { color: colors.subtext }]}>
+                              {[m.dosage, m.description].filter(Boolean).join(' • ')}
+                            </Text>
+                          </TouchableOpacity>
+                          <Text style={[styles.itemRight, { color: colors.danger }]}>{m.time}</Text>
+                          <TouchableOpacity
+                            activeOpacity={0.85}
+                            onPress={() => void markReminderTakenAsync({ reminderId: Number(m.id), alarmKey })}
+                            style={[styles.smallPill, { borderColor: colors.primary }]}
+                          >
+                            <Text style={[styles.smallPillText, { color: colors.primary }]}>
+                              {language === 'sinhala' ? 'ගත්තා' : language === 'tamil' ? 'எடுத்தேன்' : 'Taken'}
+                            </Text>
+                          </TouchableOpacity>
+                        </View>
+                      );
+                    })}
+                  </>
+                );
+              })()}
+            </View>
+
+            <View style={[styles.sectionCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <Text style={[styles.sectionTitle, { color: colors.text }]}>
+                {language === 'sinhala' ? 'අද ඖෂධ (ඉදිරියට)' : language === 'tamil' ? 'இன்றைய மருந்துகள் (வரவிருக்கும்)' : 'Today medicines (upcoming)'}
+              </Text>
+
+              {(() => {
+                const _tick = medicineClockTick;
+                const now = new Date(Date.now() + _tick * 0);
+                const nowMinutes = now.getHours() * 60 + now.getMinutes();
+                const graceMinutes = 2;
+                const upcoming = todayMedicineReminders
+                  .filter((m) => {
+                    const tp = parseTimeParts(m.time);
+                    if (!tp) return true;
+                    const mins = tp.hour * 60 + tp.minute;
+                    return mins >= nowMinutes - graceMinutes;
+                  })
+                  .sort((a, b) => String(a.time).localeCompare(String(b.time)));
+
+                if (upcoming.length === 0) {
+                  return (
+                    <Text style={[styles.cardText, { color: colors.subtext, marginTop: 8 }]}>
+                      {language === 'sinhala'
+                        ? 'අද සඳහා ඉදිරි ඖෂධ නැත.'
+                        : language === 'tamil'
+                          ? 'இன்றைக்கு வரவிருக்கும் மருந்துகள் இல்லை.'
+                          : 'No upcoming medicines for today.'}
+                    </Text>
+                  );
+                }
+
+                return (
+                  <>
+                    {upcoming.map((m) => {
+                      return (
+                        <TouchableOpacity
+                          key={m.id}
+                          activeOpacity={0.8}
+                          onPress={() => {
+                            setMedicineDetailsCard({
+                              name: m.name,
+                              date: m.date,
+                              time: m.time,
+                              dosage: m.dosage,
+                              description: m.description,
+                              doctor: m.doctor,
+                            });
+                          }}
+                          style={[styles.itemRow, { borderTopColor: colors.border }]}
+                        >
+                          <View style={{ flex: 1 }}>
+                            <Text style={[styles.itemTitle, { color: colors.text }]}>{m.name}</Text>
+                            <Text style={[styles.itemSub, { color: colors.subtext }]}>
+                              {[m.dosage, m.description].filter(Boolean).join(' • ')}
+                            </Text>
+                          </View>
+                          <Text style={[styles.itemRight, { color: colors.primary }]}>{m.time}</Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </>
+                );
+              })()}
             </View>
 
             <View style={[styles.sectionCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
@@ -1396,13 +1804,29 @@ export default function Patientdashboard({ accessToken, onOpenAiDetect, onOpenNo
               </Text>
 
               {futureMedicineReminders.map((m) => (
-                <View key={m.id} style={[styles.itemRow, { borderTopColor: colors.border }]}>
+                <TouchableOpacity
+                  key={m.id}
+                  activeOpacity={0.8}
+                  onPress={() => {
+                    setMedicineDetailsCard({
+                      name: m.name,
+                      date: m.date,
+                      time: m.time,
+                      dosage: m.dosage,
+                      description: m.description,
+                      doctor: m.doctor,
+                    });
+                  }}
+                  style={[styles.itemRow, { borderTopColor: colors.border }]}
+                >
                   <View style={{ flex: 1 }}>
                     <Text style={[styles.itemTitle, { color: colors.text }]}>{m.name}</Text>
-                    <Text style={[styles.itemSub, { color: colors.subtext }]}>{m.note}</Text>
+                    <Text style={[styles.itemSub, { color: colors.subtext }]}>
+                      {[m.dosage, m.description].filter(Boolean).join(' • ')}
+                    </Text>
                   </View>
                   <Text style={[styles.itemRight, { color: colors.primary }]}>{m.when}</Text>
-                </View>
+                </TouchableOpacity>
               ))}
 
               {futureMedicineReminders.length === 0 && (
@@ -1770,6 +2194,29 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '900',
     marginBottom: 4,
+  },
+  modalWrap: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 18,
+  },
+  modalCard: {
+    width: '100%',
+    maxWidth: 520,
+    borderRadius: 18,
+    padding: 16,
+    borderWidth: 1,
+    shadowOpacity: 0.35,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 10 },
+    elevation: 14,
+  },
+  modalHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
   },
   aiSub: {
     color: '#e5e7eb',

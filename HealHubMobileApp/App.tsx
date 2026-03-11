@@ -19,8 +19,9 @@ import AIWoundorRashDetect from './screens/AIWoundorRashDetect';
 import Notifications from './screens/Notifications';
 import NearbyAmbulance from './screens/NearbyAmbulance';
 import AmbulanceStaffDashboard from './screens/AmbulanceStaffDashboard';
-import { configureAlarmNotificationsAsync } from './utils/alarms';
+import { cancelScheduledAlarmsByKeyAsync, configureAlarmNotificationsAsync, STOP_ALARM_ACTION_ID } from './utils/alarms';
 import Constants from 'expo-constants';
+import * as ExpoNotifications from 'expo-notifications';
 
 import './utils/ambulanceBackgroundLocation';
 import { saveAuth, clearAuth } from './utils/authStorage';
@@ -60,6 +61,17 @@ function ForceNativeSplashApp() {
   const [registerEmail, setRegisterEmail] = useState<string>('');
   const [accessToken, setAccessToken] = useState<string>('');
   const [refreshToken, setRefreshToken] = useState<string>('');
+  const [pendingMedicineTake, setPendingMedicineTake] = useState<
+    | null
+    | {
+        reminderId: number;
+        medicineName?: string;
+        dosage?: string;
+        reminderDate?: string;
+        reminderTime?: string;
+        alarmKey?: string;
+      }
+  >(null);
 
   useEffect(() => {
     if (Constants.appOwnership === 'expo') {
@@ -68,6 +80,57 @@ function ForceNativeSplashApp() {
     }
 
     configureAlarmNotificationsAsync().catch((e) => console.log('Alarm notifications config failed:', e));
+  }, []);
+
+  useEffect(() => {
+    const sub = ExpoNotifications.addNotificationResponseReceivedListener((response) => {
+      try {
+        const actionId = String(response?.actionIdentifier ?? '');
+        if (actionId !== STOP_ALARM_ACTION_ID) return;
+
+        const alarmKey = response?.notification?.request?.content?.data?.alarmKey;
+        if (!alarmKey) return;
+
+        void cancelScheduledAlarmsByKeyAsync(String(alarmKey));
+      } catch (e) {
+        console.log('Notification response handler failed:', e);
+      }
+    });
+
+    return () => {
+      sub.remove();
+    };
+  }, []);
+
+  useEffect(() => {
+    const sub = ExpoNotifications.addNotificationResponseReceivedListener((response) => {
+      try {
+        const actionId = String(response?.actionIdentifier ?? '');
+        if (actionId !== ExpoNotifications.DEFAULT_ACTION_IDENTIFIER) return;
+
+        const data: any = response?.notification?.request?.content?.data ?? {};
+        const reminderIdRaw = data?.reminderId;
+        const reminderId = Number(reminderIdRaw);
+        if (!Number.isFinite(reminderId) || reminderId <= 0) return;
+
+        setPendingMedicineTake({
+          reminderId,
+          medicineName: data?.medicineName ? String(data.medicineName) : undefined,
+          dosage: data?.dosage ? String(data.dosage) : undefined,
+          reminderDate: data?.reminderDate ? String(data.reminderDate) : undefined,
+          reminderTime: data?.reminderTime ? String(data.reminderTime) : undefined,
+          alarmKey: data?.alarmKey ? String(data.alarmKey) : undefined,
+        });
+
+        setScreen('patient-dashboard');
+      } catch (e) {
+        console.log('Notification deep-link handler failed:', e);
+      }
+    });
+
+    return () => {
+      sub.remove();
+    };
   }, []);
 
   useEffect(() => {
@@ -253,6 +316,8 @@ function ForceNativeSplashApp() {
     return (
       <Patientdashboard
         accessToken={accessToken}
+        pendingMedicineTake={pendingMedicineTake}
+        onConsumePendingMedicineTake={() => setPendingMedicineTake(null)}
         onOpenAiDetect={() => setScreen('ai-detect')}
         onOpenNotifications={() => setScreen('notifications')}
         onOpenNearbyAmbulance={() => setScreen('nearby-ambulance')}
@@ -262,6 +327,7 @@ function ForceNativeSplashApp() {
           setShareEnabled(false).catch(() => {});
           stopAmbulanceBackgroundLocationAsync().catch(() => {});
           clearAuth().catch(() => {});
+          setPendingMedicineTake(null);
           setScreen('login');
         }}
       />

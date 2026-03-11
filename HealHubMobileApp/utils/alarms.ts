@@ -20,6 +20,12 @@ export type AlarmBurstScheduleResult = {
 };
 
 const ALARM_CHANNEL_ID = 'alarms_v2';
+const ALARM_CATEGORY_ID = 'alarm';
+export const STOP_ALARM_ACTION_ID = 'STOP_ALARM';
+
+type AlarmData = {
+  alarmKey?: string;
+};
 
 export async function configureAlarmNotificationsAsync() {
   const Notifications = await getNotificationsAsync();
@@ -52,6 +58,20 @@ export async function configureAlarmNotificationsAsync() {
       },
     });
   }
+
+  // Action buttons (Stop alarm)
+  try {
+    await Notifications.setNotificationCategoryAsync(ALARM_CATEGORY_ID, [
+      {
+        identifier: STOP_ALARM_ACTION_ID,
+        buttonTitle: 'Stop',
+        options: { opensAppToForeground: false },
+      },
+    ]);
+  } catch (e) {
+    // Best-effort (older SDKs / platforms may not support categories)
+    console.log('setNotificationCategoryAsync failed:', e);
+  }
 }
 
 export async function ensureAlarmPermissionAsync() {
@@ -65,6 +85,7 @@ export async function scheduleAlarmAtAsync(input: {
   title: string;
   body: string;
   date: Date;
+  data?: AlarmData;
 }): Promise<AlarmScheduleResult> {
   const Notifications = await getNotificationsAsync();
   const perm = await ensureAlarmPermissionAsync();
@@ -78,6 +99,8 @@ export async function scheduleAlarmAtAsync(input: {
       body: input.body,
       sound: 'default',
       priority: Notifications.AndroidNotificationPriority.MAX,
+      categoryIdentifier: ALARM_CATEGORY_ID,
+      data: input.data ?? {},
       ...(Platform.OS === 'android' ? { channelId: ALARM_CHANNEL_ID } : null),
     },
     trigger: {
@@ -94,6 +117,7 @@ export async function scheduleAlarmInSecondsAsync(input: {
   title: string;
   body: string;
   seconds: number;
+  data?: AlarmData;
 }): Promise<AlarmScheduleResult> {
   const Notifications = await getNotificationsAsync();
   const perm = await ensureAlarmPermissionAsync();
@@ -107,6 +131,8 @@ export async function scheduleAlarmInSecondsAsync(input: {
       body: input.body,
       sound: 'default',
       priority: Notifications.AndroidNotificationPriority.MAX,
+      categoryIdentifier: ALARM_CATEGORY_ID,
+      data: input.data ?? {},
       ...(Platform.OS === 'android' ? { channelId: ALARM_CHANNEL_ID } : null),
     },
     trigger: {
@@ -133,6 +159,7 @@ export async function scheduleCallLikeAlarmBurstAsync(input: {
   startInSeconds?: number;
   repeatEverySeconds?: number;
   repeatCount?: number;
+  data?: AlarmData;
 }): Promise<AlarmBurstScheduleResult> {
   const Notifications = await getNotificationsAsync();
 
@@ -156,6 +183,8 @@ export async function scheduleCallLikeAlarmBurstAsync(input: {
         body: input.body,
         sound: 'default',
         priority: Notifications.AndroidNotificationPriority.MAX,
+        categoryIdentifier: ALARM_CATEGORY_ID,
+        data: input.data ?? {},
         ...(Platform.OS === 'android' ? { channelId: ALARM_CHANNEL_ID } : null),
       },
       trigger: {
@@ -187,6 +216,8 @@ export async function scheduleDailyMedicineReminderAsync(input: {
       body: `${input.medicineName} • ${String(input.hour).padStart(2, '0')}:${String(input.minute).padStart(2, '0')}`,
       sound: 'default',
       priority: Notifications.AndroidNotificationPriority.MAX,
+      categoryIdentifier: ALARM_CATEGORY_ID,
+      data: {},
       ...(Platform.OS === 'android' ? { channelId: ALARM_CHANNEL_ID } : null),
     },
     trigger: {
@@ -198,6 +229,23 @@ export async function scheduleDailyMedicineReminderAsync(input: {
   });
 
   return { id };
+}
+
+export async function cancelScheduledAlarmsByKeyAsync(alarmKey: string) {
+  const Notifications = await getNotificationsAsync();
+  if (!alarmKey) return;
+  const scheduled = await Notifications.getAllScheduledNotificationsAsync();
+  const targets = scheduled.filter((req: any) => {
+    const key = req?.content?.data?.alarmKey;
+    return key && String(key) === String(alarmKey);
+  });
+  for (const t of targets) {
+    try {
+      await Notifications.cancelScheduledNotificationAsync(String(t.identifier));
+    } catch (e) {
+      console.log('cancelScheduledNotificationAsync failed:', e);
+    }
+  }
 }
 
 export async function cancelAllAlarmsAsync() {
