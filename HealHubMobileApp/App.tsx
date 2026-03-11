@@ -28,6 +28,8 @@ import { saveAuth, clearAuth } from './utils/authStorage';
 import { stopAmbulanceBackgroundLocationAsync } from './utils/ambulanceBackgroundLocation';
 import { setShareEnabled } from './utils/ambulanceLocationStorage';
 
+type PatientTabKey = 'home' | 'appointment' | 'medicine' | 'clinic' | 'reports' | 'profile';
+
 console.log('[App] App.tsx module loaded');
 
 // CRITICAL: Prevent auto-hide AND keep native splash visible
@@ -73,6 +75,83 @@ function ForceNativeSplashApp() {
       }
   >(null);
 
+  const [pendingPatientTab, setPendingPatientTab] = useState<PatientTabKey | null>(null);
+  const [pendingScreenAfterAuth, setPendingScreenAfterAuth] = useState<
+    null | 'patient-dashboard' | 'notifications' | 'ai-detect' | 'nearby-ambulance'
+  >(null);
+
+  const routeFromNotificationData = (data: any) => {
+    const rawType = String(data?.type ?? data?.target ?? data?.screen ?? '').trim().toLowerCase();
+
+    // Medicine reminder deep-link
+    const reminderId = Number(data?.reminderId);
+    if (Number.isFinite(reminderId) && reminderId > 0) {
+      setPendingMedicineTake({
+        reminderId,
+        medicineName: data?.medicineName ? String(data.medicineName) : undefined,
+        dosage: data?.dosage ? String(data.dosage) : undefined,
+        reminderDate: data?.reminderDate ? String(data.reminderDate) : undefined,
+        reminderTime: data?.reminderTime ? String(data.reminderTime) : undefined,
+        alarmKey: data?.alarmKey ? String(data.alarmKey) : undefined,
+      });
+      setPendingPatientTab('medicine');
+      return { screen: 'patient-dashboard' as const };
+    }
+
+    if (rawType.includes('ambulance')) return { screen: 'nearby-ambulance' as const };
+    if (rawType.includes('ai')) return { screen: 'ai-detect' as const };
+    if (rawType.includes('notification')) return { screen: 'notifications' as const };
+
+    if (rawType.includes('medicine')) {
+      setPendingPatientTab('medicine');
+      return { screen: 'patient-dashboard' as const };
+    }
+    if (rawType.includes('clinic')) {
+      setPendingPatientTab('clinic');
+      return { screen: 'patient-dashboard' as const };
+    }
+    if (rawType.includes('report')) {
+      setPendingPatientTab('reports');
+      return { screen: 'patient-dashboard' as const };
+    }
+    if (rawType.includes('appointment')) {
+      setPendingPatientTab('appointment');
+      return { screen: 'patient-dashboard' as const };
+    }
+
+    // Default fallback
+    return { screen: 'notifications' as const };
+  };
+
+  const handleNotificationResponse = (response: ExpoNotifications.NotificationResponse | null | undefined) => {
+    try {
+      if (!response) return;
+      const actionId = String(response?.actionIdentifier ?? '');
+
+      if (actionId === STOP_ALARM_ACTION_ID) {
+        const alarmKey = (response as any)?.notification?.request?.content?.data?.alarmKey;
+        if (!alarmKey) return;
+        void cancelScheduledAlarmsByKeyAsync(String(alarmKey));
+        return;
+      }
+
+      if (actionId !== ExpoNotifications.DEFAULT_ACTION_IDENTIFIER) return;
+
+      const data: any = (response as any)?.notification?.request?.content?.data ?? {};
+      const target = routeFromNotificationData(data);
+
+      if (!accessToken) {
+        setPendingScreenAfterAuth(target.screen);
+        setScreen('login');
+        return;
+      }
+
+      setScreen(target.screen);
+    } catch (e) {
+      console.log('Notification response routing failed:', e);
+    }
+  };
+
   useEffect(() => {
     if (Constants.appOwnership === 'expo') {
       console.log('Expo Go detected: skipping alarm notifications configuration (use a dev build to test alarms).');
@@ -84,54 +163,19 @@ function ForceNativeSplashApp() {
 
   useEffect(() => {
     const sub = ExpoNotifications.addNotificationResponseReceivedListener((response) => {
-      try {
-        const actionId = String(response?.actionIdentifier ?? '');
-        if (actionId !== STOP_ALARM_ACTION_ID) return;
-
-        const alarmKey = response?.notification?.request?.content?.data?.alarmKey;
-        if (!alarmKey) return;
-
-        void cancelScheduledAlarmsByKeyAsync(String(alarmKey));
-      } catch (e) {
-        console.log('Notification response handler failed:', e);
-      }
+      handleNotificationResponse(response);
     });
+
+    ExpoNotifications.getLastNotificationResponseAsync()
+      .then((r) => {
+        if (r) handleNotificationResponse(r);
+      })
+      .catch((e) => console.log('getLastNotificationResponseAsync failed:', e));
 
     return () => {
       sub.remove();
     };
-  }, []);
-
-  useEffect(() => {
-    const sub = ExpoNotifications.addNotificationResponseReceivedListener((response) => {
-      try {
-        const actionId = String(response?.actionIdentifier ?? '');
-        if (actionId !== ExpoNotifications.DEFAULT_ACTION_IDENTIFIER) return;
-
-        const data: any = response?.notification?.request?.content?.data ?? {};
-        const reminderIdRaw = data?.reminderId;
-        const reminderId = Number(reminderIdRaw);
-        if (!Number.isFinite(reminderId) || reminderId <= 0) return;
-
-        setPendingMedicineTake({
-          reminderId,
-          medicineName: data?.medicineName ? String(data.medicineName) : undefined,
-          dosage: data?.dosage ? String(data.dosage) : undefined,
-          reminderDate: data?.reminderDate ? String(data.reminderDate) : undefined,
-          reminderTime: data?.reminderTime ? String(data.reminderTime) : undefined,
-          alarmKey: data?.alarmKey ? String(data.alarmKey) : undefined,
-        });
-
-        setScreen('patient-dashboard');
-      } catch (e) {
-        console.log('Notification deep-link handler failed:', e);
-      }
-    });
-
-    return () => {
-      sub.remove();
-    };
-  }, []);
+  }, [accessToken]);
 
   useEffect(() => {
     console.log('=== SPLASH SCREEN FLOW START ===');
@@ -176,6 +220,11 @@ function ForceNativeSplashApp() {
     const role = String(user?.role ?? '').toLowerCase();
     if (role === 'ambulance_staff') {
       setScreen('ambulance-dashboard');
+      return;
+    }
+    if (pendingScreenAfterAuth) {
+      setScreen(pendingScreenAfterAuth);
+      setPendingScreenAfterAuth(null);
       return;
     }
     setScreen('patient-dashboard');
@@ -305,6 +354,9 @@ function ForceNativeSplashApp() {
           setShareEnabled(false).catch(() => {});
           stopAmbulanceBackgroundLocationAsync().catch(() => {});
           clearAuth().catch(() => {});
+          setPendingMedicineTake(null);
+          setPendingPatientTab(null);
+          setPendingScreenAfterAuth(null);
           setScreen('login');
         }}
         onOpenPatientDashboard={() => setScreen('patient-dashboard')}
@@ -318,6 +370,8 @@ function ForceNativeSplashApp() {
         accessToken={accessToken}
         pendingMedicineTake={pendingMedicineTake}
         onConsumePendingMedicineTake={() => setPendingMedicineTake(null)}
+        pendingTab={pendingPatientTab}
+        onConsumePendingTab={() => setPendingPatientTab(null)}
         onOpenAiDetect={() => setScreen('ai-detect')}
         onOpenNotifications={() => setScreen('notifications')}
         onOpenNearbyAmbulance={() => setScreen('nearby-ambulance')}
@@ -328,6 +382,8 @@ function ForceNativeSplashApp() {
           stopAmbulanceBackgroundLocationAsync().catch(() => {});
           clearAuth().catch(() => {});
           setPendingMedicineTake(null);
+          setPendingPatientTab(null);
+          setPendingScreenAfterAuth(null);
           setScreen('login');
         }}
       />
@@ -339,7 +395,39 @@ function ForceNativeSplashApp() {
   }
 
   if (screen === 'notifications') {
-    return <Notifications accessToken={accessToken} onBack={() => setScreen('patient-dashboard')} />;
+    return (
+      <Notifications
+        accessToken={accessToken}
+        onBack={() => setScreen('patient-dashboard')}
+        onOpenNotificationType={(type) => {
+          const t = String(type || '').trim().toLowerCase();
+          if (t.includes('ambulance')) {
+            setScreen('nearby-ambulance');
+            return;
+          }
+          if (t.includes('medicine')) {
+            setPendingPatientTab('medicine');
+            setScreen('patient-dashboard');
+            return;
+          }
+          if (t.includes('clinic')) {
+            setPendingPatientTab('clinic');
+            setScreen('patient-dashboard');
+            return;
+          }
+          if (t.includes('report')) {
+            setPendingPatientTab('reports');
+            setScreen('patient-dashboard');
+            return;
+          }
+          if (t.includes('appointment')) {
+            setPendingPatientTab('appointment');
+            setScreen('patient-dashboard');
+            return;
+          }
+        }}
+      />
+    );
   }
 
   if (screen === 'nearby-ambulance') {

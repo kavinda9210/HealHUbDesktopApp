@@ -116,13 +116,25 @@ type PatientdashboardProps = {
         alarmKey?: string;
       };
   onConsumePendingMedicineTake?: () => void;
+  pendingTab?: PatientTabKey | null;
+  onConsumePendingTab?: () => void;
   onOpenAiDetect?: () => void;
   onOpenNotifications?: () => void;
   onOpenNearbyAmbulance?: () => void;
   onLogout?: () => void;
 };
 
-export default function Patientdashboard({ accessToken, pendingMedicineTake, onConsumePendingMedicineTake, onOpenAiDetect, onOpenNotifications, onOpenNearbyAmbulance, onLogout }: PatientdashboardProps) {
+export default function Patientdashboard({
+  accessToken,
+  pendingMedicineTake,
+  onConsumePendingMedicineTake,
+  pendingTab,
+  onConsumePendingTab,
+  onOpenAiDetect,
+  onOpenNotifications,
+  onOpenNearbyAmbulance,
+  onLogout,
+}: PatientdashboardProps) {
   const { language } = useLanguage();
   const { colors, mode } = useTheme();
   const [activeTab, setActiveTab] = useState<PatientTabKey>('home');
@@ -898,6 +910,12 @@ export default function Patientdashboard({ accessToken, pendingMedicineTake, onC
     setTakeMedicineCard(pendingMedicineTake);
     onConsumePendingMedicineTake?.();
   }, [pendingMedicineTake, onConsumePendingMedicineTake]);
+
+  useEffect(() => {
+    if (!pendingTab) return;
+    setActiveTab(pendingTab);
+    onConsumePendingTab?.();
+  }, [pendingTab, onConsumePendingTab]);
 
   useEffect(() => {
     if (activeTab !== 'medicine') return;

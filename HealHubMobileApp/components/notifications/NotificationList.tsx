@@ -8,6 +8,7 @@ export type NotificationItem = {
   message: string;
   time: string;
   read?: boolean;
+  type?: string;
 };
 
 export type NotificationListProps = {

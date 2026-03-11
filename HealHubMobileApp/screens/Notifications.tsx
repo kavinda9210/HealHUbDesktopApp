@@ -18,9 +18,10 @@ type PatientNotification = {
 type NotificationsProps = {
   accessToken?: string;
   onBack?: () => void;
+  onOpenNotificationType?: (type: string) => void;
 };
 
-export default function Notifications({ accessToken, onBack }: NotificationsProps) {
+export default function Notifications({ accessToken, onBack, onOpenNotificationType }: NotificationsProps) {
   const { language } = useLanguage();
   const { colors, mode } = useTheme();
 
@@ -59,6 +60,7 @@ export default function Notifications({ accessToken, onBack }: NotificationsProp
           message: String(n.message ?? ''),
           time: timeLabel,
           read: Boolean(n.is_read),
+          type: n.type ? String(n.type) : undefined,
         };
       });
 
@@ -107,8 +109,31 @@ export default function Notifications({ accessToken, onBack }: NotificationsProp
         )}
         <NotificationList
           notifications={notifications}
-          onPressItem={(id) => {
-            setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)));
+          onPressItem={async (id) => {
+            const item = notifications.find((n) => n.id === id);
+
+            // Remove from the list immediately (dismiss UX)
+            setNotifications((prev) => prev.filter((n) => n.id !== id));
+
+            // Best-effort: delete on backend so it won't reappear.
+            if (accessToken) {
+              try {
+                const nid = Number(id);
+                if (Number.isFinite(nid) && nid > 0) {
+                  const res = await apiPost<any>(`/api/patient/notifications/${nid}/dismiss`, {}, accessToken);
+                  if (!res.ok || !res.data?.success) {
+                    const msg = (res.data && (res.data.message || res.data.error)) || 'Failed to dismiss notification';
+                    setLoadError(String(msg));
+                  }
+                }
+              } catch (e: any) {
+                setLoadError(e?.message ? String(e.message) : 'Failed to dismiss notification');
+              }
+            }
+
+            if (item?.type) {
+              onOpenNotificationType?.(String(item.type));
+            }
           }}
           onClearAll={async () => {
             if (!accessToken) {

@@ -100,6 +100,36 @@ def clear_patient_notifications():
         logger.error(f"Clear patient notifications error: {str(e)}")
         return jsonify({'success': False, 'message': 'Failed to clear notifications', 'error': str(e)}), 500
 
+
+@patient_bp.route('/notifications/<int:notification_id>/dismiss', methods=['POST'])
+@jwt_required()
+def dismiss_patient_notification(notification_id: int):
+    """Dismiss (delete) a single notification for the current user."""
+    try:
+        current_user_id = get_jwt_identity()
+
+        result = SupabaseClient.execute_query(
+            'notifications',
+            'delete',
+            filter_user_id=current_user_id,
+            filter_notification_id=notification_id,
+        )
+
+        if not result.get('success'):
+            return jsonify({'success': False, 'message': 'Failed to dismiss notification'}), 500
+
+        # Real-time UI refresh (patient)
+        try:
+            emit_user_invalidate(str(current_user_id), topics=['notifications'])
+        except Exception:
+            pass
+
+        return jsonify({'success': True, 'dismissed': int(result.get('count') or 0)}), 200
+
+    except Exception as e:
+        logger.error(f"Dismiss patient notification error: {str(e)}")
+        return jsonify({'success': False, 'message': 'Failed to dismiss notification', 'error': str(e)}), 500
+
 # Helper function to get patient ID from user ID
 def get_patient_id(user_id: str):
     """Get patient ID from user ID"""
