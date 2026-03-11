@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, StyleSheet, StatusBar, TouchableOpacity, ScrollView, TextInput, Platform, Modal, Pressable } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import * as FileSystem from 'expo-file-system/legacy';
 import PatientTabs, { PatientTabKey } from '../components/patient/tabs';
 import { useLanguage } from '../context/LanguageContext';
 import { useTheme } from '../context/ThemeContext';
@@ -192,6 +193,7 @@ export default function Patientdashboard({ accessToken, pendingMedicineTake, onC
   >(null);
   const [homeClinics, setHomeClinics] = useState<Array<{ id: string; title: string; when: string; where: string }>>([]);
   const [clinicById, setClinicById] = useState<Record<string, ClinicRow>>({});
+  const [clinicList, setClinicList] = useState<ClinicRow[]>([]);
   const [clinicDetailsCard, setClinicDetailsCard] = useState<
     null | { title: string; date: string; startTime: string; endTime?: string; status: string; notes?: string }
   >(null);
@@ -229,94 +231,10 @@ export default function Patientdashboard({ accessToken, pendingMedicineTake, onC
     return {
       medicines: homeMedicines,
       clinics: homeClinics,
-      recentAppointments: homeRecentAppointments,
       reports: homeReports,
+      recentAppointments: homeRecentAppointments,
     };
-  }, [homeMedicines, homeClinics, homeRecentAppointments, homeReports]);
-
-  const parseTimeParts = (timeText: string): { hour: number; minute: number } | null => {
-    const t = String(timeText || '').trim();
-    if (!t) return null;
-    const hhmm = t.split(':');
-    if (hhmm.length < 2) return null;
-    const hour = Number(hhmm[0]);
-    const minute = Number(hhmm[1]);
-    if (!Number.isFinite(hour) || !Number.isFinite(minute)) return null;
-    if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return null;
-    return { hour, minute };
-  };
-
-  const makeLocalDateTime = (dateText: string, timeText: string): Date | null => {
-    const d = String(dateText || '').trim();
-    const parts = d.split('-');
-    if (parts.length !== 3) return null;
-    const year = Number(parts[0]);
-    const month = Number(parts[1]);
-    const day = Number(parts[2]);
-    if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) return null;
-    const tp = parseTimeParts(timeText);
-    const hour = tp?.hour ?? 9;
-    const minute = tp?.minute ?? 0;
-    return new Date(year, month - 1, day, hour, minute, 0, 0);
-  };
-
-  const downloadReportAsTextAsync = async (report: MedicalReportRow) => {
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const FileSystem = require('expo-file-system') as any;
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const Sharing = require('expo-sharing') as any;
-
-      const created = (report.created_at || '').slice(0, 10) || new Date().toISOString().slice(0, 10);
-      const rid = report.report_id ?? 'report';
-      const filename = `healhub_medical_report_${rid}_${created}.txt`;
-      const uri = `${String(FileSystem.cacheDirectory || '')}${filename}`;
-
-      const content = [
-        'HealHub Medical Report',
-        `Date: ${created}`,
-        `Doctor: ${report.doctor_name || 'Unknown'}`,
-        report.specialization ? `Specialization: ${report.specialization}` : '',
-        '',
-        `Diagnosis: ${report.diagnosis || ''}`,
-        '',
-        `Prescription: ${report.prescription || ''}`,
-        report.notes ? `\nNotes: ${report.notes}` : '',
-        '',
-      ]
-        .filter(Boolean)
-        .join('\n');
-
-      await FileSystem.writeAsStringAsync(uri, content, { encoding: FileSystem.EncodingType?.UTF8 ?? 'utf8' });
-
-      const canShare = typeof Sharing.isAvailableAsync === 'function' ? await Sharing.isAvailableAsync() : false;
-      if (canShare) {
-        await Sharing.shareAsync(uri, {
-          mimeType: 'text/plain',
-          dialogTitle: language === 'sinhala' ? 'වෛද්‍ය වාර්තාව බාගත කරන්න' : language === 'tamil' ? 'மருத்துவ அறிக்கையை பதிவிறக்கு' : 'Download medical report',
-        });
-      }
-
-      showReminderToast(
-        'success',
-        language === 'sinhala'
-          ? 'වාර්තාව සකස් කළා.'
-          : language === 'tamil'
-            ? 'அறிக்கை தயாராக உள்ளது.'
-            : 'Report ready.'
-      );
-    } catch (e) {
-      console.log('downloadReportAsTextAsync failed:', e);
-      showReminderToast(
-        'error',
-        language === 'sinhala'
-          ? 'වාර්තාව බාගත කළ නොහැක. Dev build එකක් භාවිතා කරන්න.'
-          : language === 'tamil'
-            ? 'அறிக்கையை பதிவிறக்க முடியவில்லை. Dev build பயன்படுத்தவும்.'
-            : 'Unable to download report. Use a development build.'
-      );
-    }
-  };
+  }, [homeMedicines, homeClinics, homeReports, homeRecentAppointments]);
 
   const reconcilePatientAlarmScheduleAsync = async (input: {
     clinics: ClinicRow[];
@@ -472,6 +390,35 @@ export default function Patientdashboard({ accessToken, pendingMedicineTake, onC
     const mm = String(d.getMonth() + 1).padStart(2, '0');
     const dd = String(d.getDate()).padStart(2, '0');
     return `${yyyy}-${mm}-${dd}`;
+  };
+
+  const parseTimeParts = (timeText: string): null | { hour: number; minute: number } => {
+    const raw = String(timeText || '').trim();
+    const text = raw.includes(':') ? raw : '';
+    const parts = text.slice(0, 5).split(':');
+    if (parts.length !== 2) return null;
+    const hour = Number(parts[0]);
+    const minute = Number(parts[1]);
+    if (!Number.isFinite(hour) || !Number.isFinite(minute)) return null;
+    if (hour < 0 || hour > 23) return null;
+    if (minute < 0 || minute > 59) return null;
+    return { hour, minute };
+  };
+
+  const makeLocalDateTime = (dateText: string, timeText: string): Date | null => {
+    const dateStr = String(dateText || '').trim();
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr);
+    if (!m) return null;
+
+    const yyyy = Number(m[1]);
+    const mon = Number(m[2]);
+    const dd = Number(m[3]);
+    if (!Number.isFinite(yyyy) || !Number.isFinite(mon) || !Number.isFinite(dd)) return null;
+
+    const tp = parseTimeParts(timeText) ?? { hour: 0, minute: 0 };
+    const dt = new Date(yyyy, mon - 1, dd, tp.hour, tp.minute, 0, 0);
+    if (Number.isNaN(dt.getTime())) return null;
+    return dt;
   };
 
   const computeMedicineAlarmKey = (input: { reminderId: number | string; date: string; time: string }) => {
@@ -641,8 +588,17 @@ export default function Patientdashboard({ accessToken, pendingMedicineTake, onC
         for (const c of clinics) clinicMap[String(c.clinic_id)] = c;
         setClinicById(clinicMap);
 
-        const clinicItems = clinics
+        const scheduledClinics = clinics
           .filter((c) => String(c.status || '').toLowerCase() === 'scheduled')
+          .sort((a, b) => {
+            const da = String(a.clinic_date || '');
+            const db = String(b.clinic_date || '');
+            if (da !== db) return da.localeCompare(db);
+            return String(a.start_time || '').localeCompare(String(b.start_time || ''));
+          });
+        setClinicList(scheduledClinics);
+
+        const clinicItems = scheduledClinics
           .slice(0, 6)
           .map((c) => {
             const doc = docMap[c.doctor_id];
@@ -980,6 +936,86 @@ export default function Patientdashboard({ accessToken, pendingMedicineTake, onC
       console.log('markReminderTakenAsync failed:', e);
       showReminderToast('error', 'Failed to mark medicine taken');
       return false;
+    }
+  };
+
+  const downloadReportAsTextAsync = async (report: MedicalReportRow) => {
+    try {
+      const rid = String(report.report_id ?? report.appointment_id ?? report.clinic_id ?? 'report');
+      const created = String(report.created_at || '').slice(0, 10) || getLocalYyyyMmDd();
+      const filename = `healhub_medical_report_${rid}_${created}.txt`;
+
+      const baseDir = FileSystem.cacheDirectory || FileSystem.documentDirectory;
+      if (!baseDir) {
+        showReminderToast('error', 'Unable to download report.');
+        return;
+      }
+
+      const uri = `${baseDir}${filename}`;
+
+      const content = [
+        'HealHub Medical Report',
+        `Date: ${created}`,
+        `Doctor: ${report.doctor_name || 'Unknown'}`,
+        report.specialization ? `Specialization: ${report.specialization}` : '',
+        '',
+        `Diagnosis: ${report.diagnosis || ''}`,
+        '',
+        `Prescription: ${report.prescription || ''}`,
+        report.notes ? `\nNotes: ${report.notes}` : '',
+        '',
+      ]
+        .filter(Boolean)
+        .join('\n');
+
+      await FileSystem.writeAsStringAsync(uri, content, { encoding: FileSystem.EncodingType?.UTF8 ?? 'utf8' });
+
+      // expo-sharing requires a native build. In Expo Go / older dev builds,
+      // the native module may be missing, so we load it dynamically.
+      let Sharing: any = null;
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        Sharing = require('expo-sharing');
+      } catch {
+        Sharing = null;
+      }
+
+      const canShare = Sharing && typeof Sharing.isAvailableAsync === 'function' ? await Sharing.isAvailableAsync() : false;
+      if (canShare && typeof Sharing.shareAsync === 'function') {
+        await Sharing.shareAsync(uri, {
+          mimeType: 'text/plain',
+          dialogTitle:
+            language === 'sinhala'
+              ? 'වෛද්‍ය වාර්තාව බාගත කරන්න'
+              : language === 'tamil'
+                ? 'மருத்துவ அறிக்கையை பதிவிறக்கு'
+                : 'Download medical report',
+        });
+      } else {
+        showReminderToast(
+          'info',
+          language === 'sinhala'
+            ? 'Share කිරීම සඳහා dev build එකක් අවශ්‍යයි.'
+            : language === 'tamil'
+              ? 'Share செய்ய dev build தேவை.'
+              : 'Sharing requires a development build.'
+        );
+      }
+
+      showReminderToast(
+        'success',
+        language === 'sinhala' ? 'වාර්තාව සකස් කළා.' : language === 'tamil' ? 'அறிக்கை தயாராக உள்ளது.' : 'Report ready.'
+      );
+    } catch (e) {
+      console.log('downloadReportAsTextAsync failed:', e);
+      showReminderToast(
+        'error',
+        language === 'sinhala'
+          ? 'වාර්තාව බාගත කළ නොහැක. Dev build එකක් භාවිතා කරන්න.'
+          : language === 'tamil'
+            ? 'அறிக்கையை பதிவிறக்க முடியவில்லை. Dev build பயன்படுத்தவும்.'
+            : 'Unable to download report. Use a development build.'
+      );
     }
   };
 
@@ -1325,37 +1361,43 @@ export default function Patientdashboard({ accessToken, pendingMedicineTake, onC
               </Text>
 
               {homeSections.clinics.map((c) => (
-                <TouchableOpacity
-                  key={c.id}
-                  activeOpacity={0.8}
-                  onPress={() => {
-                    const row = clinicById[String(c.id)];
-                    const dateText = row?.clinic_date ? String(row.clinic_date) : String(c.when).split('•')[0].trim();
-                    const startText = row?.start_time ? String(row.start_time).slice(0, 5) : '';
-                    const endText = row?.end_time ? String(row.end_time).slice(0, 5) : '';
-                    const statusText = row?.status ? String(row.status) : 'Scheduled';
-                    const notesText = row?.notes ? String(row.notes) : '';
-                    setClinicDetailsCard({
-                      title: String(c.title || ''),
-                      date: dateText,
-                      startTime: startText,
-                      endTime: endText || undefined,
-                      status: statusText,
-                      notes: notesText || undefined,
-                    });
-                  }}
-                  style={[styles.itemRow, { borderTopColor: colors.border }]}
-                >
+                <View key={c.id} style={[styles.itemRow, { borderTopColor: colors.border }]}>
                   <View style={{ flex: 1 }}>
                     <Text style={[styles.itemTitle, { color: colors.text }]}>{c.title}</Text>
                     <Text style={[styles.itemSub, { color: colors.subtext }]}>
                       {c.where ? `${c.when} • ${c.where}` : c.when}
                     </Text>
                   </View>
-                  <Text style={[styles.itemRight, { color: colors.primary }]}>
-                    {language === 'sinhala' ? 'විස්තර' : language === 'tamil' ? 'விவரம்' : 'Details'}
-                  </Text>
-                </TouchableOpacity>
+                  <TouchableOpacity
+                    activeOpacity={0.85}
+                    onPress={() => {
+                      const row = clinicById[String(c.id)];
+                      const whenParts = String(c.when || '').split('•').map((s) => s.trim());
+                      const dateText = row?.clinic_date ? String(row.clinic_date) : whenParts[0] || '';
+                      const startText = row?.start_time
+                        ? String(row.start_time).slice(0, 5)
+                        : whenParts[1]
+                          ? String(whenParts[1]).slice(0, 5)
+                          : '';
+                      const endText = row?.end_time ? String(row.end_time).slice(0, 5) : '';
+                      const statusText = row?.status ? String(row.status) : 'Scheduled';
+                      const notesText = row?.notes ? String(row.notes) : '';
+                      setClinicDetailsCard({
+                        title: String(c.title || ''),
+                        date: dateText,
+                        startTime: startText,
+                        endTime: endText || undefined,
+                        status: statusText,
+                        notes: notesText || undefined,
+                      });
+                    }}
+                    style={[styles.smallPill, { borderColor: colors.primary }]}
+                  >
+                    <Text style={[styles.smallPillText, { color: colors.primary }]}>
+                      {language === 'sinhala' ? 'විස්තර' : language === 'tamil' ? 'விவரம்' : 'Details'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
               ))}
 
               {homeSections.clinics.length === 0 && (
@@ -1949,21 +1991,40 @@ export default function Patientdashboard({ accessToken, pendingMedicineTake, onC
                 {language === 'sinhala' ? 'ක්ලිනික්' : language === 'tamil' ? 'கிளினிக்' : 'Clinic'}
               </Text>
 
-              {homeSections.clinics.map((c) => (
-                <View key={c.id} style={[styles.itemRow, { borderTopColor: colors.border }]}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.itemTitle, { color: colors.text }]}>{c.title}</Text>
-                    <Text style={[styles.itemSub, { color: colors.subtext }]}>
-                      {c.where ? `${c.when} • ${c.where}` : c.when}
-                    </Text>
+              {clinicList.map((c) => {
+                const doc = doctorById[c.doctor_id];
+                const doctorName = doc?.full_name ? `Dr. ${doc.full_name}` : `Doctor #${c.doctor_id}`;
+                const whenText = `${String(c.clinic_date || '')} • ${String(c.start_time || '').slice(0, 5)}`;
+                return (
+                  <View key={String(c.clinic_id)} style={[styles.itemRow, { borderTopColor: colors.border }]}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.itemTitle, { color: colors.text }]}>{doctorName}</Text>
+                      <Text style={[styles.itemSub, { color: colors.subtext }]}>{whenText}</Text>
+                    </View>
+                    <TouchableOpacity
+                      activeOpacity={0.85}
+                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                      onPress={() => {
+                        setClinicDetailsCard({
+                          title: doctorName,
+                          date: String(c.clinic_date || ''),
+                          startTime: String(c.start_time || '').slice(0, 5),
+                          endTime: c.end_time ? String(c.end_time).slice(0, 5) : undefined,
+                          status: String(c.status || ''),
+                          notes: c.notes ? String(c.notes) : undefined,
+                        });
+                      }}
+                      style={[styles.smallPill, { borderColor: colors.primary }]}
+                    >
+                      <Text style={[styles.smallPillText, { color: colors.primary }]}>
+                        {language === 'sinhala' ? 'විස්තර' : language === 'tamil' ? 'விவரம்' : 'Details'}
+                      </Text>
+                    </TouchableOpacity>
                   </View>
-                  <Text style={[styles.itemRight, { color: colors.primary }]}>
-                    {language === 'sinhala' ? 'විස්තර' : language === 'tamil' ? 'விவரம்' : 'Details'}
-                  </Text>
-                </View>
-              ))}
+                );
+              })}
 
-              {homeSections.clinics.length === 0 && (
+              {clinicList.length === 0 && (
                 <Text style={[styles.cardText, { color: colors.subtext, marginTop: 8 }]}>
                   {language === 'sinhala'
                     ? 'ක්ලිනික් දත්ත නොමැත.'
