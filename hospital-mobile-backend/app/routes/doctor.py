@@ -9,6 +9,7 @@ from flask_jwt_extended import jwt_required, get_jwt_identity
 from app.utils.supabase_client import SupabaseClient, get_user_by_id
 from app.utils.email_service import EmailService
 from app.utils.time_utils import sl_now_iso, sl_today
+from app.realtime import emit_patient_invalidate
 from app.utils.scheduling import normalize_times, next_fourth_tuesday, daterange
 
 logger = logging.getLogger(__name__)
@@ -685,6 +686,12 @@ def doctor_prescribe_medication(patient_id: int):
             'Clinic'
         )
 
+        # Real-time UI refresh (patient)
+        try:
+            emit_patient_invalidate(int(patient_id), topics=['patient:dashboard', 'patient:medications', 'patient:clinics'])
+        except Exception:
+            pass
+
         patient_email = _get_user_email(patient['user_id'])
         if patient_email:
             EmailService.send_async_email(
@@ -1180,6 +1187,12 @@ def doctor_create_clinic_participation(patient_id: int):
             'Clinic'
         )
 
+        # Real-time UI refresh (patient)
+        try:
+            emit_patient_invalidate(int(patient_id), topics=['patient:dashboard', 'patient:clinics'])
+        except Exception:
+            pass
+
         return jsonify({'success': True, 'message': 'Clinic participation created', 'data': row}), 201
 
     except Exception as e:
@@ -1235,6 +1248,12 @@ def doctor_update_clinic_participation(patient_id: int, clinic_id: int):
         res = client.table('clinic_participation').update(update_data).eq('clinic_id', clinic_id).eq('patient_id', patient_id).eq('doctor_id', doctor['doctor_id']).execute()
         if not res.data:
             return jsonify({'success': False, 'message': 'Failed to update clinic participation'}), 500
+
+        # Real-time UI refresh (patient)
+        try:
+            emit_patient_invalidate(int(patient_id), topics=['patient:dashboard', 'patient:clinics'])
+        except Exception:
+            pass
 
         return jsonify({'success': True, 'message': 'Clinic participation updated', 'data': res.data[0]}), 200
 

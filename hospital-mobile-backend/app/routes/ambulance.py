@@ -10,6 +10,7 @@ from app.models.user_models import (
 from app.utils.supabase_client import SupabaseClient, get_user_by_id
 from app.utils.email_service import EmailService
 from app.utils.time_utils import sl_now_iso
+from app.realtime import emit_user_invalidate
 
 logger = logging.getLogger(__name__)
 
@@ -443,6 +444,18 @@ def accept_request(notification_id: int):
                 created_at=sl_now_iso()
             )
 
+            # Real-time UI refresh (patient)
+            try:
+                emit_user_invalidate(str(patient_user_id), topics=['patient:ambulance', 'notifications'])
+            except Exception:
+                pass
+
+        # Real-time UI refresh (ambulance staff)
+        try:
+            emit_user_invalidate(str(current_user_id), topics=['ambulance:requests', 'ambulance:status', 'notifications'])
+        except Exception:
+            pass
+
         logger.info(f"Ambulance {ambulance_id} accepted request: {message}")
         
         return jsonify({
@@ -514,6 +527,18 @@ def reject_request(notification_id: int):
                 type='Ambulance',
                 created_at=sl_now_iso()
             )
+
+            # Real-time UI refresh (patient)
+            try:
+                emit_user_invalidate(str(patient_user_id), topics=['patient:ambulance', 'notifications'])
+            except Exception:
+                pass
+
+        # Real-time UI refresh (ambulance staff)
+        try:
+            emit_user_invalidate(str(current_user_id), topics=['ambulance:requests', 'notifications'])
+        except Exception:
+            pass
         
         return jsonify({
             'success': True,
@@ -556,6 +581,12 @@ def complete_mission():
                 'success': False,
                 'message': 'Failed to update status'
             }), 500
+
+        # Real-time UI refresh (ambulance staff)
+        try:
+            emit_user_invalidate(str(current_user_id), topics=['ambulance:status'])
+        except Exception:
+            pass
         
         return jsonify({
             'success': True,

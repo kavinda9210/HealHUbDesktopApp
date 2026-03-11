@@ -15,6 +15,7 @@ import MapView, { type LatLng } from 'react-native-maps';
 
 import AmbulanceRequestsCard from '../components/ambulance/AmbulanceRequestsCard';
 import AmbulanceStatusCard from '../components/ambulance/AmbulanceStatusCard';
+import { connectRealtime, type InvalidatePayload } from '../utils/realtime';
 
 import { useLanguage } from '../context/LanguageContext';
 import { useTheme } from '../context/ThemeContext';
@@ -504,6 +505,41 @@ export default function AmbulanceStaffDashboard({ accessToken, onBack, onLogout 
 
     return () => {
       // Don't stop background sharing here; user controls it via toggle.
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [accessToken]);
+
+  useEffect(() => {
+    if (!accessToken) return;
+
+    const socket = connectRealtime(accessToken);
+    const lastRefreshAtRef = { current: 0 };
+
+    const onInvalidate = (payload: InvalidatePayload) => {
+      const now = Date.now();
+      if (now - lastRefreshAtRef.current < 600) return;
+      lastRefreshAtRef.current = now;
+
+      const topics = Array.isArray(payload?.topics) ? payload.topics : [];
+      if (!topics.length) {
+        void fetchStatus();
+        void fetchRequests();
+        return;
+      }
+
+      if (topics.some((t) => String(t).startsWith('ambulance:status'))) {
+        void fetchStatus();
+      }
+      if (topics.some((t) => String(t).startsWith('ambulance:requests')) || topics.some((t) => String(t) === 'notifications')) {
+        void fetchRequests();
+      }
+    };
+
+    socket.on('invalidate', onInvalidate);
+
+    return () => {
+      socket.off('invalidate', onInvalidate);
+      socket.disconnect();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [accessToken]);

@@ -5,6 +5,7 @@ import logging
 from .config import config
 from app.utils.time_utils import sl_now_iso
 from .routes.skin_disease import skin_disease_bp
+from .realtime import init_socketio
 
 
 # Configure logging
@@ -36,6 +37,9 @@ def create_app(config_name='default'):
         }
     })
     jwt.init_app(app)
+
+    # Real-time (Socket.IO)
+    init_socketio(app)
     
     # Register blueprints
     from .routes.auth import auth_bp

@@ -7,6 +7,7 @@ from app.utils.supabase_client import SupabaseClient, get_user_by_id
 from app.utils.time_utils import sl_now_iso, sl_today
 from app.utils.scheduling import normalize_times, next_fourth_tuesday, daterange
 from datetime import date, timedelta
+from app.realtime import emit_patient_invalidate
 
 logger = logging.getLogger(__name__)
 
@@ -120,6 +121,12 @@ def prescribe_medication():
 		if not ins.get('success') or not ins.get('data'):
 			return jsonify({'success': False, 'message': 'Failed to prescribe medication'}), 500
 		med = ins['data'][0]
+
+		# Real-time UI refresh for the patient dashboard
+		try:
+			emit_patient_invalidate(int(patient_id), topics=['patient:dashboard', 'patient:medications'])
+		except Exception:
+			pass
 
 		# Reminders (next 30 days)
 		try:

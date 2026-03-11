@@ -17,6 +17,7 @@ import LanguagePickerInline from '../components/settings/LanguagePickerInline';
 import ThemeToggleCard from '../components/settings/ThemeToggleCard';
 import { apiGet, apiPost } from '../utils/api';
 import PatientAmbulanceStatusCard from '../components/patient/ambulance/PatientAmbulanceStatusCard';
+import { connectRealtime, type InvalidatePayload } from '../utils/realtime';
 
 type PatientNotification = {
   notification_id: number;
@@ -143,6 +144,9 @@ export default function Patientdashboard({ accessToken, onOpenAiDetect, onOpenNo
   const [profileLoadError, setProfileLoadError] = useState<string>('');
 
   const [ambulanceStatus, setAmbulanceStatus] = useState<PatientNotification | null>(null);
+
+  const [realtimeHomeTick, setRealtimeHomeTick] = useState(0);
+  const [realtimeAmbulanceTick, setRealtimeAmbulanceTick] = useState(0);
 
   const [notificationCount, setNotificationCount] = useState<number>(0);
 
@@ -500,7 +504,7 @@ export default function Patientdashboard({ accessToken, onOpenAiDetect, onOpenNo
       cancelled = true;
       clearInterval(interval);
     };
-  }, [accessToken]);
+  }, [accessToken, realtimeAmbulanceTick]);
 
   useEffect(() => {
     // Real data for home sections + notifications count.
@@ -633,6 +637,45 @@ export default function Patientdashboard({ accessToken, onOpenAiDetect, onOpenNo
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [accessToken, realtimeHomeTick]);
+
+  useEffect(() => {
+    if (!accessToken) return;
+
+    const socket = connectRealtime(accessToken);
+    let lastAt = 0;
+
+    const onInvalidate = (payload: InvalidatePayload) => {
+      const now = Date.now();
+      if (now - lastAt < 600) return;
+      lastAt = now;
+
+      const topics = Array.isArray(payload?.topics) ? payload.topics : [];
+      if (!topics.length) {
+        setRealtimeHomeTick((x) => x + 1);
+        setRealtimeAmbulanceTick((x) => x + 1);
+        return;
+      }
+
+      if (topics.some((t) => String(t).startsWith('patient:dashboard'))
+        || topics.some((t) => String(t).startsWith('patient:medications'))
+        || topics.some((t) => String(t).startsWith('patient:clinics'))
+        || topics.some((t) => String(t).startsWith('patient:reports'))
+      ) {
+        setRealtimeHomeTick((x) => x + 1);
+      }
+
+      if (topics.some((t) => String(t).startsWith('patient:ambulance')) || topics.some((t) => String(t) === 'notifications')) {
+        setRealtimeAmbulanceTick((x) => x + 1);
+      }
+    };
+
+    socket.on('invalidate', onInvalidate);
+
+    return () => {
+      socket.off('invalidate', onInvalidate);
+      socket.disconnect();
+    };
   }, [accessToken]);
 
   useEffect(() => {

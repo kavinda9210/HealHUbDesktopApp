@@ -13,6 +13,7 @@ from app.models.user_models import PatientResponse
 from app.utils.supabase_client import SupabaseClient, get_user_by_id
 from app.utils.email_service import EmailService
 from app.utils.time_utils import sl_today_iso, sl_now_iso, sl_today
+from app.realtime import emit_user_invalidate
 
 logger = logging.getLogger(__name__)
 
@@ -983,6 +984,13 @@ def request_ambulance(ambulance_id: int):
             type='Ambulance',
             created_at=sl_now_iso()
         )
+
+        # Real-time UI refresh for both ambulance staff and patient
+        try:
+            emit_user_invalidate(str(ambulance.get('user_id')), topics=['ambulance:requests', 'notifications'])
+            emit_user_invalidate(str(current_user_id), topics=['patient:ambulance', 'notifications'])
+        except Exception:
+            pass
         
         # Send email to ambulance staff
         ambulance_user_result = SupabaseClient.execute_query(
