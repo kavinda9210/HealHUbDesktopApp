@@ -138,6 +138,11 @@ function ForceNativeSplashApp() {
       if (actionId !== ExpoNotifications.DEFAULT_ACTION_IDENTIFIER) return;
 
       const data: any = (response as any)?.notification?.request?.content?.data ?? {};
+      const alarmKey = data?.alarmKey ? String(data.alarmKey) : '';
+      if (alarmKey) {
+        // Consider opening the notification as a response: stop any remaining repeats + missed marker.
+        void cancelScheduledAlarmsByKeyAsync(alarmKey);
+      }
       const target = routeFromNotificationData(data);
 
       if (!accessToken) {

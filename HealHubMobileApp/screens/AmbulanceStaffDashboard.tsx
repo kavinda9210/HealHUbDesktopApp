@@ -11,7 +11,6 @@ import {
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Location from 'expo-location';
-import MapView, { type LatLng } from 'react-native-maps';
 
 import AmbulanceRequestsCard from '../components/ambulance/AmbulanceRequestsCard';
 import AmbulanceStatusCard from '../components/ambulance/AmbulanceStatusCard';
@@ -62,6 +61,8 @@ type ActiveMission = {
   acceptedAt: string;
 };
 
+type LatLng = { latitude: number; longitude: number };
+
 function extractLatLng(text: string): { lat: number; lng: number } | null {
   // Matches: "Location: 6.9271, 79.8612"
   const match = text.match(/Location:\s*([-+]?\d+(?:\.\d+)?)\s*,\s*([-+]?\d+(?:\.\d+)?)/i);
@@ -76,8 +77,6 @@ export default function AmbulanceStaffDashboard({ accessToken, onBack, onLogout 
   const { language } = useLanguage();
   const { colors, mode } = useTheme();
   const insets = useSafeAreaInsets();
-
-  const mapRef = useRef<MapView | null>(null);
 
   const [status, setStatus] = useState<AmbulanceStatus | null>(null);
   const [requests, setRequests] = useState<AmbulanceRequest[]>([]);
@@ -100,12 +99,7 @@ export default function AmbulanceStaffDashboard({ accessToken, onBack, onLogout 
   const [routeLoading, setRouteLoading] = useState(false);
   const [routeError, setRouteError] = useState('');
 
-  const isMapSupported = useMemo(() => {
-    if (Platform.OS === 'web') return false;
-    const getConfig = (UIManager as any)?.getViewManagerConfig;
-    if (typeof getConfig !== 'function') return false;
-    return !!getConfig('AIRMap');
-  }, []);
+  // Map is rendered via MapLibre (WebView) in AmbulanceRequestsCard.
 
   const title = useMemo(() => {
     if (language === 'sinhala') return 'ඇම්බියුලන්ස් කාර්ය මණ්ඩල';
@@ -232,51 +226,7 @@ export default function AmbulanceStaffDashboard({ accessToken, onBack, onLogout 
     setStaticMapStatus('loading');
   }, [staticMapUrl]);
 
-  const initialRegion = useMemo(() => {
-    const firstRequest = allMarkers[0];
-    if (firstRequest) {
-      return {
-        latitude: firstRequest.lat,
-        longitude: firstRequest.lng,
-        latitudeDelta: 0.08,
-        longitudeDelta: 0.08,
-      };
-    }
-
-    if (ambulanceCoords) {
-      return {
-        latitude: ambulanceCoords.latitude,
-        longitude: ambulanceCoords.longitude,
-        latitudeDelta: 0.08,
-        longitudeDelta: 0.08,
-      };
-    }
-
-    return {
-      latitude: 0,
-      longitude: 0,
-      latitudeDelta: 80,
-      longitudeDelta: 80,
-    };
-  }, [ambulanceCoords, allMarkers]);
-
-  useEffect(() => {
-    if (!mapRef.current) return;
-    if (allMarkers.length === 0 && !ambulanceCoords) return;
-
-    const coords: LatLng[] = [];
-    if (ambulanceCoords) coords.push(ambulanceCoords);
-    for (const m of allMarkers) coords.push({ latitude: m.lat, longitude: m.lng });
-
-    const handle = setTimeout(() => {
-      mapRef.current?.fitToCoordinates(coords, {
-        animated: true,
-        edgePadding: { top: 42, right: 42, bottom: 42, left: 42 },
-      });
-    }, 250);
-
-    return () => clearTimeout(handle);
-  }, [allMarkers, ambulanceCoords]);
+  // Map fitting is handled inside MapLibreView.
 
   const computeBestRoute = async (from: LatLng, to: { lat: number; lng: number }) => {
     setRouteLoading(true);
@@ -621,9 +571,6 @@ export default function AmbulanceStaffDashboard({ accessToken, onBack, onLogout 
           loadingRequests={loadingRequests}
           requests={requests}
           onRefreshRequests={fetchRequests}
-          isMapSupported={isMapSupported}
-          mapRef={mapRef}
-          initialRegion={initialRegion}
           ambulanceCoords={ambulanceCoords}
           markers={allMarkers}
           selectedRequestId={selectedRequestId}

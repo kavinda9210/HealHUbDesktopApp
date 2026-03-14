@@ -7,8 +7,9 @@ import { useLanguage } from '../context/LanguageContext';
 import { useTheme } from '../context/ThemeContext';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import AlertMessage from '../components/alerts/AlertMessage';
-import { cancelAlarmAsync, cancelScheduledAlarmsByKeyAsync, scheduleAlarmAtAsync, scheduleCallLikeAlarmBurstAsync } from '../utils/alarms';
+import { cancelAlarmAsync, cancelScheduledAlarmsByKeyAsync, scheduleAlarmAtAsync, scheduleAlarmBurstAtAsync, scheduleMissedReminderAtAsync } from '../utils/alarms';
 import { kvGet, kvSet } from '../utils/kvStorage';
+import { getAlarmSoundConfig, getSelectedAlarmToneId } from '../utils/alarmTones';
 
 import ProfileViewCard, { PatientUser } from '../components/patient/profile/ProfileViewCard';
 import ProfileEditCard from '../components/patient/profile/ProfileEditCard';
@@ -16,6 +17,7 @@ import EmailChangeVerificationCard from '../components/patient/profile/EmailChan
 import DeleteAccountCard from '../components/patient/profile/DeleteAccountCard';
 import LanguagePickerInline from '../components/settings/LanguagePickerInline';
 import ThemeToggleCard from '../components/settings/ThemeToggleCard';
+import AlarmToneSettingsCard from '../components/settings/AlarmToneSettingsCard';
 import { apiGet, apiPost } from '../utils/api';
 import PatientAmbulanceStatusCard from '../components/patient/ambulance/PatientAmbulanceStatusCard';
 import { connectRealtime, type InvalidatePayload } from '../utils/realtime';
@@ -332,6 +334,9 @@ export default function Patientdashboard({
 
       const storedSet = new Set(storedKeys);
 
+      const medicineSound = getAlarmSoundConfig(await getSelectedAlarmToneId('medicine'));
+      const clinicSound = getAlarmSoundConfig(await getSelectedAlarmToneId('clinic'));
+
       // Cancel alarms that are no longer desired
       for (const key of storedKeys) {
         if (desiredKeys.has(key)) continue;
@@ -347,22 +352,48 @@ export default function Patientdashboard({
       for (const d of limited) {
         if (storedSet.has(d.key)) continue;
         try {
-          const secondsUntil = Math.floor((d.date.getTime() - Date.now()) / 1000);
           const isMedicine = String(d.key).startsWith('med:');
-          const isNearTerm = secondsUntil > 0 && secondsUntil <= 12 * 60 * 60;
 
-          if (isMedicine && isNearTerm) {
-            // Burst so it keeps sounding/vibrating until patient taps Stop (or burst ends)
-            await scheduleCallLikeAlarmBurstAsync({
+          const isClinic = String(d.key).startsWith('clinic:');
+          const sound = isMedicine ? medicineSound : isClinic ? clinicSound : undefined;
+
+          if (isMedicine || isClinic) {
+            // Spec: ring + vibrate 4 times, minute-by-minute.
+            await scheduleAlarmBurstAtAsync({
               title: d.title,
               body: d.body,
-              startInSeconds: secondsUntil,
-              repeatEverySeconds: 6,
-              repeatCount: 15,
-              data: { alarmKey: d.key, ...(d.data ?? {}) },
+              date: d.date,
+              burstEverySeconds: 60,
+              burstCount: 4,
+              data: { alarmKey: d.key, ...(d.data ?? {}), type: isMedicine ? 'medicine' : 'clinic' },
+              ...(sound ? { sound } : {}),
+            });
+
+            // If the user does not respond within those 4 minutes, mark as missed.
+            const missedAt = new Date(d.date.getTime() + 4 * 60 * 1000);
+            await scheduleMissedReminderAtAsync({
+              title: isMedicine
+                ? language === 'sinhala'
+                  ? 'අහිමි වූ ඖෂධ මතක් කිරීම'
+                  : language === 'tamil'
+                    ? 'தவறிய மருந்து நினைவூட்டல்'
+                    : 'Missed medicine reminder'
+                : language === 'sinhala'
+                  ? 'අහිමි වූ ක්ලිනික් මතක් කිරීම'
+                  : language === 'tamil'
+                    ? 'தவறிய கிளினிக் நினைவூட்டல்'
+                    : 'Missed clinic reminder',
+              body: d.body,
+              date: missedAt,
+              data: { alarmKey: d.key, type: isMedicine ? 'medicine' : 'clinic', missed: true },
             });
           } else {
-            await scheduleAlarmAtAsync({ title: d.title, body: d.body, date: d.date, data: { alarmKey: d.key, ...(d.data ?? {}) } });
+            await scheduleAlarmAtAsync({
+              title: d.title,
+              body: d.body,
+              date: d.date,
+              data: { alarmKey: d.key, ...(d.data ?? {}) },
+            });
           }
 
           storedSet.add(d.key);
@@ -2433,6 +2464,7 @@ export default function Patientdashboard({
 
             <LanguagePickerInline />
             <ThemeToggleCard />
+            <AlarmToneSettingsCard />
             <DeleteAccountCard />
           </ScrollView>
         )}

@@ -8,12 +8,14 @@ import {
   Platform,
   Image,
 } from 'react-native';
-import MapView, { Marker, Polyline, type LatLng } from 'react-native-maps';
+import MapLibreView from '../maps/MapLibreView';
 
 import type { AmbulanceStatus, AmbulanceRequest, ActiveMission } from './types';
 import { MapErrorBoundary } from './MapErrorBoundary';
 
 type MarkerModel = { id: number; title: string; message: string; lat: number; lng: number };
+
+type LatLng = { latitude: number; longitude: number };
 
 type Props = {
   colors: { card: string; text: string; subtext: string; border: string; primary: string; danger: string };
@@ -22,10 +24,6 @@ type Props = {
   loadingRequests: boolean;
   requests: AmbulanceRequest[];
   onRefreshRequests: () => void;
-
-  isMapSupported: boolean;
-  mapRef: React.MutableRefObject<MapView | null>;
-  initialRegion: { latitude: number; longitude: number; latitudeDelta: number; longitudeDelta: number };
 
   ambulanceCoords: LatLng | null;
   markers: MarkerModel[];
@@ -54,9 +52,6 @@ export default function AmbulanceRequestsCard(props: Props) {
     loadingRequests,
     requests,
     onRefreshRequests,
-    isMapSupported,
-    mapRef,
-    initialRegion,
     ambulanceCoords,
     markers,
     selectedRequestId,
@@ -74,6 +69,41 @@ export default function AmbulanceRequestsCard(props: Props) {
     onReject,
   } = props;
 
+  const mapMarkers = React.useMemo(() => {
+    const list: Array<{ id: string | number; lat: number; lng: number; color?: string; title?: string }> = [];
+    if (ambulanceCoords) {
+      list.push({
+        id: 'ambulance',
+        lat: ambulanceCoords.latitude,
+        lng: ambulanceCoords.longitude,
+        color: colors.primary,
+        title: status?.ambulance_number ? `Ambulance ${status.ambulance_number}` : 'Ambulance',
+      });
+    }
+    for (const m of markers) {
+      list.push({
+        id: m.id,
+        lat: m.lat,
+        lng: m.lng,
+        color: selectedRequestId === m.id ? colors.danger : '#2E8B57',
+        title: m.title,
+      });
+    }
+    return list;
+  }, [ambulanceCoords, colors.danger, colors.primary, markers, selectedRequestId, status?.ambulance_number]);
+
+  const routePoints = React.useMemo(() => {
+    if (!routeLine || routeLine.length < 2) return [];
+    return routeLine.map((p) => ({ lat: p.latitude, lng: p.longitude }));
+  }, [routeLine]);
+
+  const focus = React.useMemo(() => {
+    if (!selectedRequestId) return null;
+    const t = markers.find((m) => m.id === selectedRequestId);
+    if (!t) return null;
+    return { lat: t.lat, lng: t.lng, zoom: 15 };
+  }, [markers, selectedRequestId]);
+
   return (
     <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
       <View style={styles.rowBetween}>
@@ -90,72 +120,36 @@ export default function AmbulanceRequestsCard(props: Props) {
             <View style={styles.mapFallbackCenter}>
               <Text style={[styles.note, { color: colors.subtext, marginTop: 0 }]}>Map is not available on web.</Text>
             </View>
-          ) : isMapSupported ? (
+          ) : (
             <MapErrorBoundary
               fallback={(
                 <View style={styles.mapFallbackCenter}>
-                  <Text style={[styles.note, { color: colors.subtext, marginTop: 0, textAlign: 'center' }]}>Map failed to load in this build.</Text>
+                  <Text style={[styles.note, { color: colors.subtext, marginTop: 0, textAlign: 'center' }]}>Map failed to load. Check your internet connection.</Text>
                 </View>
               )}
             >
-              <MapView
-                ref={(r) => { mapRef.current = r; }}
-                initialRegion={initialRegion}
-                style={StyleSheet.absoluteFillObject}
-                showsCompass
-                showsScale
-                rotateEnabled={false}
-              >
-                {!!ambulanceCoords && (
-                  <Marker
-                    coordinate={ambulanceCoords}
-                    title="Ambulance"
-                    description={status?.ambulance_number ? `Ambulance ${status.ambulance_number}` : undefined}
-                    pinColor={colors.primary}
+              <View style={StyleSheet.absoluteFillObject}>
+                <MapLibreView
+                  markers={mapMarkers}
+                  polyline={routePoints}
+                  focus={focus}
+                  onLoadError={() => {
+                    // Fall back to static map image if interactive map fails.
+                    onStaticMapError();
+                  }}
+                />
+
+                {staticMapStatus === 'error' && (
+                  <Image
+                    source={{ uri: staticMapUrl }}
+                    style={StyleSheet.absoluteFillObject}
+                    resizeMode="cover"
+                    onLoad={onStaticMapLoad}
+                    onError={onStaticMapError}
                   />
                 )}
-
-                {markers.map((m) => (
-                  <Marker
-                    key={String(m.id)}
-                    coordinate={{ latitude: m.lat, longitude: m.lng }}
-                    title={m.title}
-                    description={m.message}
-                    pinColor={selectedRequestId === m.id ? colors.danger : undefined}
-                  />
-                ))}
-
-                {!!routeLine?.length && (
-                  <Polyline
-                    coordinates={routeLine}
-                    strokeColor={colors.primary}
-                    strokeWidth={4}
-                  />
-                )}
-              </MapView>
+              </View>
             </MapErrorBoundary>
-          ) : (
-            <>
-              <Image
-                source={{ uri: staticMapUrl }}
-                style={StyleSheet.absoluteFillObject}
-                resizeMode="cover"
-                onLoad={onStaticMapLoad}
-                onError={onStaticMapError}
-              />
-              {staticMapStatus === 'loading' && (
-                <View style={styles.mapFallbackCenter}>
-                  <ActivityIndicator />
-                </View>
-              )}
-              {staticMapStatus === 'error' && (
-                <View style={styles.mapFallbackCenter}>
-                  <Text style={[styles.note, { color: colors.subtext, marginTop: 0, textAlign: 'center' }]}>
-                    Unable to load map image. Check your internet connection.
-                  </Text>
-                </View>
-              )}
-            </>
           )}
         </View>
       ) : (
@@ -202,17 +196,6 @@ export default function AmbulanceRequestsCard(props: Props) {
                     style={[styles.outlineBtnSmall, { borderColor: colors.border }]}
                     onPress={() => {
                       onSelectRequestId(r.notification_id);
-                      if (isMapSupported) {
-                        mapRef.current?.animateToRegion(
-                          {
-                            latitude: lat,
-                            longitude: lng,
-                            latitudeDelta: 0.02,
-                            longitudeDelta: 0.02,
-                          },
-                          350,
-                        );
-                      }
                     }}
                   >
                     <Text style={[styles.outlineBtnText, { color: colors.subtext }]}>Show on map</Text>

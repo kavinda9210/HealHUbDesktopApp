@@ -36,7 +36,19 @@
     "plugins": [
       "expo-splash-screen",
       "@react-native-community/datetimepicker",
-      "expo-notifications",
+      [
+        "expo-notifications",
+        {
+          "sounds": [
+            "./assets/ringingTone/ringtone_cabinet.mp3",
+            "./assets/ringingTone/ringtone_good_morning.mp3",
+            "./assets/ringingTone/ringtone_penthouse.mp3",
+            "./assets/ringingTone/ringtone_classic.mp3",
+            "./assets/ringingTone/ringtone_universe_071.mp3",
+            "./assets/ringingTone/ringtone_universe_091.mp3"
+          ]
+        }
+      ],
       "expo-secure-store",
       "expo-asset"
     ],
