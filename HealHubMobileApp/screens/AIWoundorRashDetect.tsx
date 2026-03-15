@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -16,11 +16,13 @@ import { Image } from 'expo-image';
 import * as Location from 'expo-location';
 import { useLanguage } from '../context/LanguageContext';
 import { useTheme } from '../context/ThemeContext';
-import { apiPost, apiPostFormData } from '../utils/api';
+import MapLibreView, { MAPLIBRE_STYLE_STREETS_URL, type MapLibreMarker } from '../components/maps/MapLibreView';
+import { apiGet, apiPost, apiPostFormData } from '../utils/api';
 
 type AIWoundorRashDetectProps = {
   accessToken?: string;
   onBack?: () => void;
+  onOpenDirections?: (input: { origin?: { lat: number; lng: number } | null; destination: { lat: number; lng: number }; destinationName?: string }) => void;
 };
 
 type DetectionKind = 'rash' | 'wound' | 'unknown';
@@ -34,12 +36,14 @@ type DetectionResult = {
   nextSteps: string[];
 };
 
-type Doctor = {
-  id: string;
-  name: string;
-  specialty: string;
-  rating: number;
-  eta: string;
+type DoctorRow = {
+  doctor_id: number;
+  full_name?: string | null;
+  specialization?: string | null;
+  qualification?: string | null;
+  consultation_fee?: number | null;
+  start_time?: string | null;
+  end_time?: string | null;
 };
 
 type NearbyPlace = {
@@ -161,27 +165,6 @@ function buildFakeResult(uri: string): DetectionResult {
   };
 }
 
-function buildDoctors(kind: DetectionKind): Doctor[] {
-  if (kind === 'wound') {
-    return [
-      { id: 'd1', name: 'Dr. Jayasinghe', specialty: 'General Practice', rating: 4.7, eta: 'Today' },
-      { id: 'd2', name: 'Dr. Perera', specialty: 'Wound Care', rating: 4.6, eta: 'Tomorrow' },
-      { id: 'd3', name: 'Dr. Silva', specialty: 'Emergency Medicine', rating: 4.5, eta: 'Now' },
-    ];
-  }
-  if (kind === 'rash') {
-    return [
-      { id: 'd1', name: 'Dr. Fernando', specialty: 'Dermatology', rating: 4.8, eta: 'Today' },
-      { id: 'd2', name: 'Dr. Kumari', specialty: 'Dermatology', rating: 4.6, eta: 'Tomorrow' },
-      { id: 'd3', name: 'Dr. Jayasinghe', specialty: 'General Practice', rating: 4.7, eta: 'Today' },
-    ];
-  }
-  return [
-    { id: 'd1', name: 'Dr. Jayasinghe', specialty: 'General Practice', rating: 4.7, eta: 'Today' },
-    { id: 'd2', name: 'Dr. Fernando', specialty: 'Dermatology', rating: 4.8, eta: 'Tomorrow' },
-  ];
-}
-
 function buildNearbyCareQuery(result: DetectionResult): string {
   const base = result.kind === 'wound' || result.severity === 'high' ? 'hospital' : 'dermatology clinic';
   const label = String(result.label || '').trim();
@@ -228,10 +211,11 @@ function categorize(el: any): NearbyPlace['category'] {
   return 'clinic';
 }
 
-export default function AIWoundorRashDetect({ accessToken, onBack }: AIWoundorRashDetectProps) {
+export default function AIWoundorRashDetect({ accessToken, onBack, onOpenDirections }: AIWoundorRashDetectProps) {
   const { language } = useLanguage();
   const { colors, mode } = useTheme();
   const insets = useSafeAreaInsets();
+
 
   const [imageUri, setImageUri] = useState<string | null>(null);
   const [imageBase64, setImageBase64] = useState<string | null>(null);
@@ -242,6 +226,14 @@ export default function AIWoundorRashDetect({ accessToken, onBack }: AIWoundorRa
   const [nearbyLoading, setNearbyLoading] = useState(false);
   const [nearbyPlaces, setNearbyPlaces] = useState<NearbyPlace[] | null>(null);
   const [nearbyError, setNearbyError] = useState<string>('');
+
+  const [nearbyOrigin, setNearbyOrigin] = useState<{ lat: number; lng: number } | null>(null);
+  const [nearbyMapError, setNearbyMapError] = useState(false);
+
+
+  const [doctorsLoading, setDoctorsLoading] = useState(false);
+  const [doctorsError, setDoctorsError] = useState('');
+  const [doctors, setDoctors] = useState<DoctorRow[]>([]);
 
   const severityBg = useMemo(() => {
     const severity = result?.severity;
@@ -370,6 +362,8 @@ export default function AIWoundorRashDetect({ accessToken, onBack }: AIWoundorRa
 
     setNearbyError('');
     setNearbyPlaces(null);
+    setNearbyOrigin(null);
+    setNearbyMapError(false);
     setNearbyLoading(true);
     try {
       const perm = await Location.requestForegroundPermissionsAsync();
@@ -387,6 +381,7 @@ export default function AIWoundorRashDetect({ accessToken, onBack }: AIWoundorRa
       const current = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
       const lat = current.coords.latitude;
       const lng = current.coords.longitude;
+      setNearbyOrigin({ lat, lng });
 
       const preferHospitals = result.kind === 'wound' || result.severity === 'high';
       const radius = preferHospitals ? 12000 : 7000;
@@ -442,6 +437,80 @@ export default function AIWoundorRashDetect({ accessToken, onBack }: AIWoundorRa
     }
   };
 
+  useEffect(() => {
+    // Load available doctors from backend DB when we have an analysis result.
+    let cancelled = false;
+
+    async function loadDoctors() {
+      if (!result) {
+        setDoctors([]);
+        setDoctorsError('');
+        setDoctorsLoading(false);
+        return;
+      }
+
+      setDoctorsLoading(true);
+      setDoctorsError('');
+      setDoctors([]);
+
+      try {
+        const params = new URLSearchParams();
+        // Best-effort specialization hint (kept optional so DB values don't have to match exactly).
+        if (result.kind === 'rash') params.set('specialization', 'Dermatology');
+
+        const url = params.toString() ? `/api/appointment/doctors?${params.toString()}` : '/api/appointment/doctors';
+        const res = await apiGet<any>(url);
+        if (cancelled) return;
+
+        if (!res.ok || res.data?.success === false) {
+          const msg = (res.data && (res.data.message || res.data.error)) || 'Failed to load doctors';
+          setDoctorsError(String(msg));
+          setDoctors([]);
+          return;
+        }
+
+        const rows: DoctorRow[] = Array.isArray(res.data?.data) ? res.data.data : [];
+        setDoctors(rows.slice(0, 8));
+      } catch (e: any) {
+        if (cancelled) return;
+        setDoctorsError(e?.message ? String(e.message) : 'Failed to load doctors');
+        setDoctors([]);
+      } finally {
+        if (!cancelled) setDoctorsLoading(false);
+      }
+    }
+
+    loadDoctors();
+    return () => {
+      cancelled = true;
+    };
+  }, [result?.kind, result?.severity]);
+
+  const nearbyMarkers = useMemo<MapLibreMarker[]>(() => {
+    const markers: MapLibreMarker[] = [];
+    if (nearbyOrigin) {
+      markers.push({
+        id: 'me',
+        lat: nearbyOrigin.lat,
+        lng: nearbyOrigin.lng,
+        kind: 'patient',
+        iconText: '📍',
+      });
+    }
+    const list = Array.isArray(nearbyPlaces) ? nearbyPlaces : [];
+    for (const p of list) {
+      markers.push({
+        id: p.id,
+        lat: p.lat,
+        lng: p.lng,
+        kind: 'pin',
+        iconText: p.category === 'hospital' ? '🏥' : p.category === 'dermatology' ? '🧴' : '🩺',
+        title: p.name,
+      });
+    }
+    return markers;
+  }, [nearbyOrigin, nearbyPlaces]);
+
   const openPlaceDirections = async (place: NearbyPlace) => {
     const dest = `${place.lat},${place.lng}`;
     const label = place.name ? `(${place.name})` : '';
@@ -469,6 +538,18 @@ export default function AIWoundorRashDetect({ accessToken, onBack }: AIWoundorRa
     }
 
     setErrorMessage(language === 'sinhala' ? 'Maps විවෘත කළ නොහැක.' : language === 'tamil' ? 'Maps திறக்க முடியவில்லை.' : 'Cannot open Maps.');
+  };
+
+  const handleDirectionsPress = (place: NearbyPlace) => {
+    if (onOpenDirections) {
+      onOpenDirections({
+        origin: nearbyOrigin,
+        destination: { lat: place.lat, lng: place.lng },
+        destinationName: place.name,
+      });
+      return;
+    }
+    openPlaceDirections(place);
   };
 
   const handlePickFromLibrary = async () => {
@@ -594,8 +675,6 @@ export default function AIWoundorRashDetect({ accessToken, onBack }: AIWoundorRa
     setResult(mapped);
     setIsAnalyzing(false);
   };
-
-  const doctors = useMemo(() => buildDoctors(result?.kind ?? 'unknown'), [result?.kind]);
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: colors.background }]} edges={['top', 'bottom']}>
@@ -734,21 +813,50 @@ export default function AIWoundorRashDetect({ accessToken, onBack }: AIWoundorRa
         {!!result && (
           <View style={[styles.listCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <Text style={[styles.sectionTitle, { color: colors.text }]}>{doctorsTitle}</Text>
-            {doctors.map((d) => (
-              <View key={d.id} style={[styles.rowItem, { borderTopColor: colors.border }]}>
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.rowTitle, { color: colors.text }]}>{d.name}</Text>
-                  <Text style={[styles.rowSub, { color: colors.subtext }]}>
-                    {d.specialty} • ⭐ {d.rating.toFixed(1)} • {d.eta}
-                  </Text>
-                </View>
-                <TouchableOpacity style={[styles.smallButton, { backgroundColor: colors.primary }]} activeOpacity={0.85}>
-                  <Text style={styles.smallButtonText}>
-                    {language === 'sinhala' ? 'වෙන්කරගන්න' : language === 'tamil' ? 'முன்பதிவு' : 'Book'}
-                  </Text>
-                </TouchableOpacity>
+
+            {doctorsLoading && (
+              <View style={{ marginTop: 10 }}>
+                <ActivityIndicator />
               </View>
-            ))}
+            )}
+
+            {!!doctorsError && !doctorsLoading && (
+              <Text style={[styles.disclaimer, { color: colors.subtext }]}>{doctorsError}</Text>
+            )}
+
+            {!doctorsLoading && !doctorsError && doctors.length === 0 && (
+              <Text style={[styles.disclaimer, { color: colors.subtext }]}>
+                {language === 'sinhala'
+                  ? 'දත්ත ගබඩාවේ වෛද්‍යවරු නොමැත.'
+                  : language === 'tamil'
+                    ? 'தரவுத்தளத்தில் மருத்துவர்கள் இல்லை.'
+                    : 'No doctors found in the database.'}
+              </Text>
+            )}
+
+            {!doctorsLoading && !doctorsError && doctors.map((d) => {
+              const name = d.full_name ? `Dr. ${String(d.full_name)}` : `Doctor #${String(d.doctor_id)}`;
+              const subParts = [
+                d.specialization ? String(d.specialization) : '',
+                d.qualification ? String(d.qualification) : '',
+                typeof d.consultation_fee === 'number' ? `Fee: ${d.consultation_fee}` : '',
+              ].filter((x) => String(x).trim().length > 0);
+              const sub = subParts.join(' • ');
+
+              return (
+                <View key={String(d.doctor_id)} style={[styles.rowItem, { borderTopColor: colors.border }]}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.rowTitle, { color: colors.text }]}>{name}</Text>
+                    {!!sub && <Text style={[styles.rowSub, { color: colors.subtext }]}>{sub}</Text>}
+                  </View>
+                  <TouchableOpacity style={[styles.smallButton, { backgroundColor: colors.primary }]} activeOpacity={0.85}>
+                    <Text style={styles.smallButtonText}>
+                      {language === 'sinhala' ? 'වෙන්කරගන්න' : language === 'tamil' ? 'முன்பதிவு' : 'Book'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              );
+            })}
           </View>
         )}
 
@@ -782,6 +890,32 @@ export default function AIWoundorRashDetect({ accessToken, onBack }: AIWoundorRa
 
             {!!nearbyPlaces && nearbyPlaces.length > 0 && (
               <View style={{ marginTop: 10 }}>
+                {(nearbyOrigin && Platform.OS !== 'web') ? (
+                  <View style={[styles.mapWrap, { borderColor: colors.border, backgroundColor: colors.background }]}> 
+                    {!nearbyMapError ? (
+                      <View style={StyleSheet.absoluteFillObject}>
+                        <MapLibreView
+                          styleUrl={MAPLIBRE_STYLE_STREETS_URL}
+                          markers={nearbyMarkers}
+                          polyline={null}
+                          focus={{ lat: nearbyOrigin.lat, lng: nearbyOrigin.lng, zoom: 13 }}
+                          onLoadError={() => setNearbyMapError(true)}
+                        />
+                      </View>
+                    ) : (
+                      <View style={styles.mapFallbackCenter}>
+                        <Text style={[styles.disclaimer, { color: colors.subtext, marginTop: 0, textAlign: 'center' }]}>
+                          {language === 'sinhala'
+                            ? 'සිතියම පූරණය නොවීය. අන්තර්ජාල සම්බන්ධතාවය පරීක්ෂා කරන්න.'
+                            : language === 'tamil'
+                              ? 'வரைபடம் ஏற்றப்படவில்லை. இணைய இணைப்பை சரிபார்க்கவும்.'
+                              : 'Map failed to load. Check your internet connection.'}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                ) : null}
+
                 {nearbyPlaces.map((p) => (
                   <View key={p.id} style={[styles.rowItem, { borderTopColor: colors.border }]}>
                     <View style={{ flex: 1 }}>
@@ -793,7 +927,7 @@ export default function AIWoundorRashDetect({ accessToken, onBack }: AIWoundorRa
                     <TouchableOpacity
                       style={[styles.smallButtonOutline, { backgroundColor: colors.background, borderColor: colors.primary }]}
                       activeOpacity={0.85}
-                      onPress={() => openPlaceDirections(p)}
+                      onPress={() => handleDirectionsPress(p)}
                     >
                       <Text style={[styles.smallButtonOutlineText, { color: colors.primary }]}>{directionsLabel}</Text>
                     </TouchableOpacity>
@@ -841,6 +975,18 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '900',
     textAlign: 'center',
+  },
+  mapWrap: {
+    marginTop: 12,
+    borderRadius: 12,
+    overflow: 'hidden',
+    borderWidth: 1,
+  },
+  mapFallbackCenter: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 12,
   },
   container: {
     paddingHorizontal: 20,

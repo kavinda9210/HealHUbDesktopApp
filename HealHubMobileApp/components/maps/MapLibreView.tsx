@@ -518,8 +518,21 @@ function makeHtml(styleUrl: string) {
             map.easeTo({ center: [payload.focus.lng, payload.focus.lat], zoom: payload.focus.zoom || 15, duration: 350 });
           } else {
             // Prefer fitting markers; if there are no markers but a line exists, fit the line.
-            // Don't refit on every location tick; only refit when the marker set changes.
-            var fitKey = (markers || []).map(function(m){ return String(m.id); }).sort().join('|');
+            // Don't refit on every location tick; only refit when the relevant geometry changes.
+            var markerKey = (markers || []).map(function(m){ return String(m.id); }).sort().join('|');
+            var lineKey = '';
+            if (hasLine) {
+              try {
+                var first = line[0];
+                var last = line[line.length - 1];
+                lineKey = String(line.length)
+                  + ':' + String(first.lat) + ',' + String(first.lng)
+                  + '->' + String(last.lat) + ',' + String(last.lng);
+              } catch (e) {
+                lineKey = String(line.length);
+              }
+            }
+            var fitKey = markerKey + '|' + lineKey;
             if (fitKey && fitKey !== __lastFitKey) {
               __lastFitKey = fitKey;
               if (markers.length > 0) {

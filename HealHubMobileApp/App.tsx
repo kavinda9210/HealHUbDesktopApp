@@ -19,6 +19,7 @@ import AIWoundorRashDetect from './screens/AIWoundorRashDetect';
 import Notifications from './screens/Notifications';
 import NearbyAmbulance from './screens/NearbyAmbulance';
 import AmbulanceStaffDashboard from './screens/AmbulanceStaffDashboard';
+import DirectionsMap from './screens/DirectionsMap';
 import { cancelScheduledAlarmsByKeyAsync, configureAlarmNotificationsAsync, STOP_ALARM_ACTION_ID } from './utils/alarms';
 import Constants from 'expo-constants';
 import * as ExpoNotifications from 'expo-notifications';
@@ -57,7 +58,14 @@ export default function AppWrapper() {
 }
 
 function ForceNativeSplashApp() {
-  const [screen, setScreen] = useState<'native-splash' | 'custom-splash' | 'language' | 'intro' | 'login' | 'forgot-password' | 'verification' | 'register' | 'email-verification' | 'patient-dashboard' | 'ai-detect' | 'notifications' | 'nearby-ambulance' | 'ambulance-dashboard' | 'main'>('native-splash');
+  const [screen, setScreen] = useState<'native-splash' | 'custom-splash' | 'language' | 'intro' | 'login' | 'forgot-password' | 'verification' | 'register' | 'email-verification' | 'patient-dashboard' | 'ai-detect' | 'directions' | 'notifications' | 'nearby-ambulance' | 'ambulance-dashboard' | 'main'>('native-splash');
+
+  const [directionsParams, setDirectionsParams] = useState<null | {
+    backScreen: 'ai-detect' | 'patient-dashboard';
+    origin?: { lat: number; lng: number } | null;
+    destination: { lat: number; lng: number };
+    destinationName?: string;
+  }>(null);
   const splashTimer = useRef<NodeJS.Timeout | null>(null);
   const [resetEmail, setResetEmail] = useState<string>('');
   const [registerEmail, setRegisterEmail] = useState<string>('');
@@ -122,6 +130,13 @@ function ForceNativeSplashApp() {
     // Default fallback
     return { screen: 'notifications' as const };
   };
+
+  useEffect(() => {
+    // Avoid blank screens if params are missing.
+    if (screen === 'directions' && !directionsParams) {
+      setScreen('ai-detect');
+    }
+  }, [directionsParams, screen]);
 
   const handleNotificationResponse = (response: ExpoNotifications.NotificationResponse | null | undefined) => {
     try {
@@ -395,8 +410,46 @@ function ForceNativeSplashApp() {
     );
   }
 
-  if (screen === 'ai-detect') {
-    return <AIWoundorRashDetect accessToken={accessToken} onBack={() => setScreen('patient-dashboard')} />;
+  if (screen === 'ai-detect' || screen === 'directions') {
+    return (
+      <View style={{ flex: 1 }}>
+        <View
+          style={[StyleSheet.absoluteFill, { display: screen === 'ai-detect' ? 'flex' : 'none' }]}
+          pointerEvents={screen === 'ai-detect' ? 'auto' : 'none'}
+        >
+          <AIWoundorRashDetect
+            accessToken={accessToken}
+            onBack={() => setScreen('patient-dashboard')}
+            onOpenDirections={(p) => {
+              setDirectionsParams({
+                backScreen: 'ai-detect',
+                origin: p.origin ?? null,
+                destination: p.destination,
+                destinationName: p.destinationName,
+              });
+              setScreen('directions');
+            }}
+          />
+        </View>
+
+        <View
+          style={[StyleSheet.absoluteFill, { display: screen === 'directions' ? 'flex' : 'none' }]}
+          pointerEvents={screen === 'directions' ? 'auto' : 'none'}
+        >
+          {directionsParams ? (
+            <DirectionsMap
+              origin={directionsParams.origin}
+              destination={directionsParams.destination}
+              destinationName={directionsParams.destinationName}
+              onBack={() => {
+                setDirectionsParams(null);
+                setScreen('ai-detect');
+              }}
+            />
+          ) : null}
+        </View>
+      </View>
+    );
   }
 
   if (screen === 'notifications') {

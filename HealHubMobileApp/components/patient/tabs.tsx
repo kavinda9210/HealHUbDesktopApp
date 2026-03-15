@@ -1,7 +1,8 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, StyleSheet, TouchableOpacity } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../context/ThemeContext';
+import { Ionicons } from '@expo/vector-icons';
 
 export type PatientTabKey = 'home' | 'appointment' | 'medicine' | 'clinic' | 'reports' | 'profile';
 
@@ -14,12 +15,13 @@ export default function PatientTabs({ activeTab, onChange }: PatientTabsProps) {
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
 
-  const tabs: Array<{ key: PatientTabKey; icon: string; a11y: string }> = [
-    { key: 'home', icon: '🏠', a11y: 'Home' },
-    { key: 'appointment', icon: '📅', a11y: 'Appointment' },
-    { key: 'medicine', icon: '💊', a11y: 'Medicine' },
-    { key: 'clinic', icon: '🏥', a11y: 'Clinic' },
-    { key: 'reports', icon: '📄', a11y: 'Reports' },
+  const tabs: Array<{ key: PatientTabKey; iconActive: React.ComponentProps<typeof Ionicons>['name']; iconInactive: React.ComponentProps<typeof Ionicons>['name']; a11y: string }> = [
+    { key: 'home', iconActive: 'home', iconInactive: 'home-outline', a11y: 'Home' },
+    { key: 'appointment', iconActive: 'calendar', iconInactive: 'calendar-outline', a11y: 'Appointment' },
+    { key: 'medicine', iconActive: 'medkit', iconInactive: 'medkit-outline', a11y: 'Medicine' },
+    { key: 'clinic', iconActive: 'business', iconInactive: 'business-outline', a11y: 'Clinic' },
+    { key: 'reports', iconActive: 'document-text', iconInactive: 'document-text-outline', a11y: 'Reports' },
+    { key: 'profile', iconActive: 'person', iconInactive: 'person-outline', a11y: 'Profile' },
   ];
 
   return (
@@ -51,7 +53,7 @@ export default function PatientTabs({ activeTab, onChange }: PatientTabsProps) {
             accessibilityRole="button"
             accessibilityLabel={t.a11y}
           >
-            <Text style={[styles.icon, { color: isActive ? colors.primary : colors.subtext }]}>{t.icon}</Text>
+            <Ionicons name={isActive ? t.iconActive : t.iconInactive} size={22} color={isActive ? colors.primary : colors.subtext} />
           </TouchableOpacity>
         );
       })}

@@ -14,6 +14,7 @@ import {
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Location from 'expo-location';
+import { Ionicons } from '@expo/vector-icons';
 
 import AmbulanceRequestsCard from '../components/ambulance/AmbulanceRequestsCard';
 import AmbulanceStatusCard from '../components/ambulance/AmbulanceStatusCard';
@@ -1038,7 +1039,7 @@ export default function AmbulanceStaffDashboard({ accessToken, onLogout }: Ambul
               accessibilityLabel="Notifications"
               style={styles.bellWrap}
             >
-              <Text style={[styles.bellIcon, { color: colors.text }]}>🔔</Text>
+              <Ionicons name="notifications-outline" size={20} color={colors.text} />
               {unreadCount > 0 && (
                 <View style={[styles.badge, { backgroundColor: colors.danger, borderColor: colors.background }]}>
                   <Text style={styles.badgeText}>{unreadCount}</Text>
@@ -1089,7 +1090,9 @@ export default function AmbulanceStaffDashboard({ accessToken, onLogout }: Ambul
                 accessibilityRole="button"
                 accessibilityLabel="Refresh map location"
               >
-                <Text style={[styles.smallPillText, { color: colors.subtext }]}>📍 {refreshMapLabel}</Text>
+                <Text style={[styles.smallPillText, { color: colors.subtext }]}>
+                  <Ionicons name="locate-outline" size={14} color={colors.subtext} /> {refreshMapLabel}
+                </Text>
               </TouchableOpacity>
             </View>
             {mapLoadError ? (
@@ -1116,7 +1119,7 @@ export default function AmbulanceStaffDashboard({ accessToken, onLogout }: Ambul
           >
             {!!errorMessage && activeTab !== 'profile' && (
               <View style={styles.errorWrap}>
-                <Text style={styles.errorIcon}>⚠️</Text>
+                <Ionicons name="warning-outline" size={18} color={colors.danger} style={styles.errorIcon} />
                 <Text style={[styles.errorText, { color: colors.text }]}>{errorMessage}</Text>
               </View>
             )}
@@ -1286,7 +1289,7 @@ export default function AmbulanceStaffDashboard({ accessToken, onLogout }: Ambul
               <View style={{ paddingHorizontal: 20, paddingTop: 14 }}>
                 {!!profileLoadError && (
                   <View style={[styles.errorWrap, { paddingHorizontal: 0, marginTop: 0 }] }>
-                    <Text style={styles.errorIcon}>⚠️</Text>
+                    <Ionicons name="warning-outline" size={18} color={colors.danger} style={styles.errorIcon} />
                     <Text style={[styles.errorText, { color: colors.text }]}>{profileLoadError}</Text>
                   </View>
                 )}

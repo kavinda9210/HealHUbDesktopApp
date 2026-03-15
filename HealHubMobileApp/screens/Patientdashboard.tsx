@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, StyleSheet, StatusBar, TouchableOpacity, ScrollView, TextInput, Platform, Modal, Pressable } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as FileSystem from 'expo-file-system/legacy';
+import { Ionicons } from '@expo/vector-icons';
 import PatientTabs, { PatientTabKey } from '../components/patient/tabs';
 import { useLanguage } from '../context/LanguageContext';
 import { useTheme } from '../context/ThemeContext';
@@ -1481,7 +1482,7 @@ export default function Patientdashboard({
                 accessibilityLabel="Notifications"
                 style={styles.bellWrap}
               >
-                <Text style={[styles.bellIcon, { color: colors.text }]}>🔔</Text>
+                <Ionicons name="notifications-outline" size={20} color={colors.text} />
                 {notificationCount > 0 && (
                   <View style={[styles.badge, { backgroundColor: colors.danger, borderColor: colors.background }]}>
                     <Text style={styles.badgeText}>{notificationCount}</Text>
@@ -1489,20 +1490,6 @@ export default function Patientdashboard({
                 )}
               </TouchableOpacity>
             )}
-
-                <TouchableOpacity
-                  onPress={() => {
-                    setActiveTab('profile');
-                  }}
-                  activeOpacity={0.7}
-                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                  accessibilityRole="button"
-                  accessibilityLabel="Profile"
-                >
-                  <Text style={[styles.profileText, { color: colors.primary }]}>
-                    {language === 'sinhala' ? 'පැතිකඩ' : language === 'tamil' ? 'சுயவிவரம்' : 'Profile'}
-                  </Text>
-                </TouchableOpacity>
           </View>
         </View>
         <Text style={[styles.subtitle, { color: colors.subtext }]}>{tabTitle}</Text>
@@ -1745,7 +1732,6 @@ export default function Patientdashboard({
                       {a.date} • {a.time} • {a.status}
                     </Text>
                   </View>
-                  <Text style={[styles.itemRight, { color: colors.primary }]}>⭐</Text>
                 </View>
               ))}
 
@@ -1848,7 +1834,8 @@ export default function Patientdashboard({
                 style={[styles.pickerBtn, { borderColor: colors.border, backgroundColor: colors.background }]}
               >
                 <Text style={[styles.pickerBtnText, { color: appointmentDate ? colors.text : colors.subtext }]}>
-                  📅 {formatDateLabel(appointmentDate)}
+                  <Ionicons name="calendar-outline" size={16} color={appointmentDate ? colors.text : colors.subtext} />{' '}
+                  {formatDateLabel(appointmentDate)}
                 </Text>
               </TouchableOpacity>
 
@@ -1876,7 +1863,8 @@ export default function Patientdashboard({
                 style={[styles.pickerBtn, { borderColor: colors.border, backgroundColor: colors.background }]}
               >
                 <Text style={[styles.pickerBtnText, { color: appointmentTime ? colors.text : colors.subtext }]}>
-                  ⏰ {formatTimeLabel(appointmentTime)}
+                  <Ionicons name="time-outline" size={16} color={appointmentTime ? colors.text : colors.subtext} />{' '}
+                  {formatTimeLabel(appointmentTime)}
                 </Text>
               </TouchableOpacity>
 
@@ -1922,7 +1910,16 @@ export default function Patientdashboard({
                     return;
                   }
 
-                  if (!dt) return;
+                  if (!appointmentDate || !appointmentTime || !dt) {
+                    setAppointmentError(
+                      language === 'sinhala'
+                        ? 'දිනය සහ වේලාව තෝරන්න.'
+                        : language === 'tamil'
+                          ? 'தேதி மற்றும் நேரம் தேர்வு செய்யவும்.'
+                          : 'Please select a date and time.'
+                    );
+                    return;
+                  }
 
                   if (!validateNotPast(dt)) {
                     setAppointmentError(cannotPastErrorText);

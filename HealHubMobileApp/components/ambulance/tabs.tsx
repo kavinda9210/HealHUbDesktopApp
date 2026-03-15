@@ -1,7 +1,8 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, StyleSheet, TouchableOpacity } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../context/ThemeContext';
+import { Ionicons } from '@expo/vector-icons';
 
 export type AmbulanceTabKey = 'home' | 'requests' | 'map' | 'history' | 'profile';
 
@@ -14,12 +15,12 @@ export default function AmbulanceTabs({ activeTab, onChange }: AmbulanceTabsProp
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
 
-  const tabs: Array<{ key: AmbulanceTabKey; icon: string; a11y: string }> = [
-    { key: 'home', icon: '🚑', a11y: 'Home' },
-    { key: 'requests', icon: '📍', a11y: 'Requests' },
-    { key: 'map', icon: '🗺️', a11y: 'Map' },
-    { key: 'history', icon: '🕘', a11y: 'History' },
-    { key: 'profile', icon: '👤', a11y: 'Profile' },
+  const tabs: Array<{ key: AmbulanceTabKey; iconActive: React.ComponentProps<typeof Ionicons>['name']; iconInactive: React.ComponentProps<typeof Ionicons>['name']; a11y: string }> = [
+    { key: 'home', iconActive: 'car', iconInactive: 'car-outline', a11y: 'Home' },
+    { key: 'requests', iconActive: 'list', iconInactive: 'list-outline', a11y: 'Requests' },
+    { key: 'map', iconActive: 'map', iconInactive: 'map-outline', a11y: 'Map' },
+    { key: 'history', iconActive: 'time', iconInactive: 'time-outline', a11y: 'History' },
+    { key: 'profile', iconActive: 'person', iconInactive: 'person-outline', a11y: 'Profile' },
   ];
 
   return (
@@ -51,7 +52,7 @@ export default function AmbulanceTabs({ activeTab, onChange }: AmbulanceTabsProp
             accessibilityRole="button"
             accessibilityLabel={t.a11y}
           >
-            <Text style={[styles.icon, { color: isActive ? colors.primary : colors.subtext }]}>{t.icon}</Text>
+            <Ionicons name={isActive ? t.iconActive : t.iconInactive} size={22} color={isActive ? colors.primary : colors.subtext} />
           </TouchableOpacity>
         );
       })}
