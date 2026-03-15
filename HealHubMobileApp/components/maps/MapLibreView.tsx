@@ -107,11 +107,32 @@ function makeHtml(styleUrl: string) {
       if (STYLE_URL === 'carto-voyager') {
         resolvedStyle = CARTO_VOYAGER_STYLE;
       }
+      function initialViewFromPayload(p) {
+        try {
+          if (p && p.focus && typeof p.focus.lat === 'number' && typeof p.focus.lng === 'number') {
+            return { center: [Number(p.focus.lng), Number(p.focus.lat)], zoom: Number(p.focus.zoom || 15) };
+          }
+          var markers = (p && Array.isArray(p.markers)) ? p.markers : [];
+          if (markers.length > 0 && typeof markers[0].lat === 'number' && typeof markers[0].lng === 'number') {
+            return { center: [Number(markers[0].lng), Number(markers[0].lat)], zoom: 13 };
+          }
+          var line = (p && Array.isArray(p.polyline)) ? p.polyline : [];
+          if (line.length > 0 && typeof line[0].lat === 'number' && typeof line[0].lng === 'number') {
+            return { center: [Number(line[0].lng), Number(line[0].lat)], zoom: 12 };
+          }
+        } catch (e) {}
+        return { center: [0, 0], zoom: 2 };
+      }
+
+      // The React Native WebView injects window.__INITIAL_PAYLOAD__ before content loads.
+      // Use it to avoid a brief "world view" flash.
+      var initial = initialViewFromPayload(window.__INITIAL_PAYLOAD__);
+
       var map = new maplibregl.Map({
         container: 'map',
         style: resolvedStyle,
-        center: [0, 0],
-        zoom: 2,
+        center: initial.center,
+        zoom: initial.zoom,
         attributionControl: true
       });
 

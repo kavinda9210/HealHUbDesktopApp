@@ -8,17 +8,31 @@ import {
   StatusBar,
   Platform,
   UIManager,
+  Modal,
+  Pressable,
+  Linking,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Location from 'expo-location';
 
 import AmbulanceRequestsCard from '../components/ambulance/AmbulanceRequestsCard';
 import AmbulanceStatusCard from '../components/ambulance/AmbulanceStatusCard';
+import AmbulanceTabs, { type AmbulanceTabKey } from '../components/ambulance/tabs';
+import NotificationList, { type NotificationItem } from '../components/notifications/NotificationList';
+import MapLibreView, { MAPLIBRE_STYLE_STREETS_URL, type MapLibreMarker, type MapLibrePolylinePoint } from '../components/maps/MapLibreView';
 import { connectRealtime, type InvalidatePayload } from '../utils/realtime';
 
 import { useLanguage } from '../context/LanguageContext';
 import { useTheme } from '../context/ThemeContext';
 import { apiGet, apiPost } from '../utils/api';
+import { kvGet, kvSet } from '../utils/kvStorage';
+
+import ProfileViewCard, { PatientUser } from '../components/patient/profile/ProfileViewCard';
+import ProfileEditCard from '../components/patient/profile/ProfileEditCard';
+import EmailChangeVerificationCard from '../components/patient/profile/EmailChangeVerificationCard';
+import DeleteAccountCard from '../components/patient/profile/DeleteAccountCard';
+import LanguagePickerInline from '../components/settings/LanguagePickerInline';
+import ThemeToggleCard from '../components/settings/ThemeToggleCard';
 import {
   ensureLocationPermissionsAsync,
   isAmbulanceBackgroundLocationRunningAsync,
@@ -62,6 +76,16 @@ type ActiveMission = {
 };
 
 type LatLng = { latitude: number; longitude: number };
+
+type MissionHistoryItem = {
+  id: string;
+  requestId: number;
+  title: string;
+  acceptedAt?: string;
+  completedAt: string;
+};
+
+const HISTORY_KEY = 'ambulance_mission_history_v1';
 
 function extractLatLng(text: string): { lat: number; lng: number } | null {
   // Matches: "Location: 6.9271, 79.8612"
@@ -169,13 +193,28 @@ function formatOsrmStep(step: any): string | null {
   return null;
 }
 
-export default function AmbulanceStaffDashboard({ accessToken, onBack, onLogout }: AmbulanceStaffDashboardProps) {
+export default function AmbulanceStaffDashboard({ accessToken, onLogout }: AmbulanceStaffDashboardProps) {
   const { language } = useLanguage();
   const { colors, mode } = useTheme();
   const insets = useSafeAreaInsets();
 
+  const [activeTab, setActiveTab] = useState<AmbulanceTabKey>('home');
+
+  const [profileView, setProfileView] = useState<'view' | 'edit' | 'verify-email'>('view');
+  const [pendingEmail, setPendingEmail] = useState<string>('');
+  const [user, setUser] = useState<PatientUser>({
+    fullName: 'A. Staff',
+    email: 'staff@email.com',
+    phone: '+94 77 123 4567',
+    gender: '-',
+    dateOfBirth: '-',
+    address: '-',
+  });
+  const [profileLoadError, setProfileLoadError] = useState<string>('');
+
   const [status, setStatus] = useState<AmbulanceStatus | null>(null);
   const [requests, setRequests] = useState<AmbulanceRequest[]>([]);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
 
   const [loadingStatus, setLoadingStatus] = useState(false);
   const [loadingRequests, setLoadingRequests] = useState(false);
@@ -199,6 +238,11 @@ export default function AmbulanceStaffDashboard({ accessToken, onBack, onLogout 
   const [reachedPatient, setReachedPatient] = useState(false);
   const [patientPhone, setPatientPhone] = useState<string | null>(null);
 
+  const [history, setHistory] = useState<MissionHistoryItem[]>([]);
+
+  const [mapLoadError, setMapLoadError] = useState(false);
+  const [mapRefreshTick, setMapRefreshTick] = useState(0);
+
   const lastRouteComputeAtRef = useRef(0);
 
   // Foreground realtime coords for immediate UI updates.
@@ -212,6 +256,121 @@ export default function AmbulanceStaffDashboard({ accessToken, onBack, onLogout 
     if (language === 'tamil') return 'ஆம்புலன்ஸ் பணியாளர்';
     return 'Ambulance Staff';
   }, [language]);
+
+  const backLabel = useMemo(() => {
+    if (language === 'sinhala') return 'ආපසු';
+    if (language === 'tamil') return 'பின்செல்';
+    return 'Back';
+  }, [language]);
+
+  const quickActionsTitle = useMemo(() => {
+    if (language === 'sinhala') return 'ඉක්මන් ක්‍රියා';
+    if (language === 'tamil') return 'விரைவு செயல்கள்';
+    return 'Quick actions';
+  }, [language]);
+
+  const callPatientLabel = useMemo(() => {
+    if (language === 'sinhala') return 'රෝගියාට අමතන්න';
+    if (language === 'tamil') return 'நோயாளியை அழைக்க';
+    return 'Call patient';
+  }, [language]);
+
+  const openRouteLabel = useMemo(() => {
+    if (language === 'sinhala') return 'මාර්ගය බලන්න';
+    if (language === 'tamil') return 'வழியை திற';
+    return 'Open route';
+  }, [language]);
+
+  const toggleAvailLabel = useMemo(() => {
+    if (language === 'sinhala') return 'ලබා ගත හැකි බව';
+    if (language === 'tamil') return 'கிடைக்குமா';
+    return 'Toggle availability';
+  }, [language]);
+
+  const historyTitle = useMemo(() => {
+    if (language === 'sinhala') return 'ඉතිහාසය';
+    if (language === 'tamil') return 'வரலாறு';
+    return 'History';
+  }, [language]);
+
+  const mapTitle = useMemo(() => {
+    if (language === 'sinhala') return 'නක්ෂා';
+    if (language === 'tamil') return 'வரைபடம்';
+    return 'Map';
+  }, [language]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const raw = await kvGet(HISTORY_KEY);
+        if (cancelled) return;
+        const parsed = raw ? JSON.parse(String(raw)) : null;
+        if (Array.isArray(parsed)) {
+          setHistory(
+            parsed
+              .filter((x) => x && typeof x === 'object')
+              .slice(0, 80)
+              .map((x: any) => ({
+                id: String(x.id ?? ''),
+                requestId: Number(x.requestId ?? 0),
+                title: String(x.title ?? ''),
+                acceptedAt: x.acceptedAt ? String(x.acceptedAt) : undefined,
+                completedAt: String(x.completedAt ?? ''),
+              }))
+              .filter((x: any) => x.id && Number.isFinite(x.requestId) && x.title && x.completedAt),
+          );
+        }
+      } catch {
+        // ignore
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadProfile() {
+      if (!accessToken) return;
+      setProfileLoadError('');
+
+      const result = await apiGet<any>('/api/auth/profile', accessToken);
+      if (cancelled) return;
+
+      if (!result.ok) {
+        const msg = (result.data && (result.data.message || result.data.error)) || 'Failed to load profile';
+        setProfileLoadError(String(msg));
+        return;
+      }
+
+      const data = result.data?.data ?? result.data;
+      if (!data) {
+        setProfileLoadError('Failed to load profile');
+        return;
+      }
+
+      const mapped: PatientUser = {
+        fullName: String(data.full_name ?? data.fullName ?? user.fullName),
+        email: String(data.email ?? user.email),
+        phone: String(data.phone ?? user.phone),
+        gender: String(data.gender ?? user.gender),
+        dateOfBirth: String(data.dob ?? data.date_of_birth ?? data.dateOfBirth ?? user.dateOfBirth),
+        address: String(data.address ?? user.address),
+      };
+
+      setUser(mapped);
+    }
+
+    loadProfile();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [accessToken]);
 
   const fetchStatus = async () => {
     if (!accessToken) {
@@ -259,6 +418,31 @@ export default function AmbulanceStaffDashboard({ accessToken, onBack, onLogout 
       setLoadingRequests(false);
     }
   };
+
+  const notificationItems = useMemo<NotificationItem[]>(() => {
+    return (requests || []).map((r) => ({
+      id: String(r.notification_id),
+      title: String(r.title || 'Notification'),
+      message: String(r.message || ''),
+      time: r.created_at ? String(r.created_at).replace('T', ' ').slice(0, 19) : '',
+      read: Boolean(r.is_read),
+      type: 'Ambulance',
+    }));
+  }, [requests]);
+
+  const unreadCount = useMemo(() => notificationItems.filter((n) => !n.read).length, [notificationItems]);
+
+  const notificationsTitle = useMemo(() => {
+    if (language === 'sinhala') return 'දැනුම්දීම්';
+    if (language === 'tamil') return 'அறிவிப்புகள்';
+    return 'Notifications';
+  }, [language]);
+
+  const closeLabel = useMemo(() => {
+    if (language === 'sinhala') return 'වසන්න';
+    if (language === 'tamil') return 'மூடு';
+    return 'Close';
+  }, [language]);
 
   const requestMarkers = useMemo(() => {
     return requests
@@ -585,11 +769,28 @@ export default function AmbulanceStaffDashboard({ accessToken, onBack, onLogout 
     if (!accessToken) return;
 
     setErrorMessage('');
+    const missionToSave = activeMission;
     const res = await apiPost<any>('/api/ambulance/complete-mission', {}, accessToken);
     if (!res.ok || res.data?.success === false) {
       const msg = (res.data && (res.data.message || res.data.error)) || 'Failed to complete mission';
       setErrorMessage(String(msg));
       return;
+    }
+
+    if (missionToSave) {
+      const entry: MissionHistoryItem = {
+        id: `${String(missionToSave.requestId)}-${Date.now()}`,
+        requestId: missionToSave.requestId,
+        title: String(missionToSave.title || 'Mission'),
+        acceptedAt: missionToSave.acceptedAt,
+        completedAt: new Date().toISOString(),
+      };
+
+      setHistory((prev) => {
+        const next = [entry, ...prev].slice(0, 80);
+        void kvSet(HISTORY_KEY, JSON.stringify(next));
+        return next;
+      });
     }
 
     setActiveMission(null);
@@ -703,100 +904,449 @@ export default function AmbulanceStaffDashboard({ accessToken, onBack, onLogout 
 
   const headerBg = mode === 'dark' ? colors.card : colors.background;
 
+  const mapMarkers = useMemo<MapLibreMarker[]>(() => {
+    const list: MapLibreMarker[] = [];
+    if (ambulanceCoords) {
+      list.push({
+        id: 'ambulance',
+        lat: ambulanceCoords.latitude,
+        lng: ambulanceCoords.longitude,
+        kind: 'ambulance',
+        color: colors.primary,
+        title: 'Ambulance',
+      });
+    }
+
+    if (activeMission) {
+      list.push({
+        id: `patient-${String(activeMission.requestId)}`,
+        lat: activeMission.patientLat,
+        lng: activeMission.patientLng,
+        kind: 'patient',
+        color: colors.danger,
+        title: activeMission.title || 'Patient',
+      });
+      return list;
+    }
+
+    // If no active mission, show request pins.
+    for (const m of allMarkers) {
+      list.push({
+        id: String(m.id),
+        lat: m.lat,
+        lng: m.lng,
+        kind: 'pin',
+        color: colors.primary,
+        title: String(m.title || 'Request'),
+      });
+    }
+
+    return list;
+  }, [activeMission, allMarkers, ambulanceCoords, colors.danger, colors.primary]);
+
+  const mapPolyline = useMemo<MapLibrePolylinePoint[] | null>(() => {
+    if (!routeLine || routeLine.length < 2) return null;
+    return routeLine
+      .map((p) => ({ lat: p.latitude, lng: p.longitude }))
+      .filter((p) => Number.isFinite(p.lat) && Number.isFinite(p.lng));
+  }, [routeLine]);
+
+  const mapFocus = useMemo(() => {
+    if (activeMission) return { lat: activeMission.patientLat, lng: activeMission.patientLng, zoom: 13 };
+    if (ambulanceCoords) return { lat: ambulanceCoords.latitude, lng: ambulanceCoords.longitude, zoom: 12 };
+    return null;
+  }, [activeMission, ambulanceCoords, mapRefreshTick]);
+
+  const canCall = Boolean(patientPhone && String(patientPhone).trim().length >= 3);
+  const canOpenRoute = Boolean(activeMission && (mapPolyline?.length || routeLine?.length));
+  const canToggleAvailability = Boolean(status);
+
+  const refreshMapLabel = useMemo(() => {
+    if (language === 'sinhala') return 'නැවුම් කරන්න';
+    if (language === 'tamil') return 'புதுப்பி';
+    return 'Refresh';
+  }, [language]);
+
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: colors.background }]} edges={['top', 'bottom']}>
       <StatusBar barStyle={mode === 'dark' ? 'light-content' : 'dark-content'} backgroundColor={headerBg} translucent={false} />
 
-      <ScrollView
-        style={{ flex: 1, backgroundColor: colors.background }}
-        contentContainerStyle={{ paddingBottom: Math.max(24, insets.bottom + 12) }}
-        showsVerticalScrollIndicator={false}
+      <Modal
+        visible={notificationsOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setNotificationsOpen(false)}
       >
+        <View style={styles.modalWrap}>
+          <Pressable
+            style={[
+              StyleSheet.absoluteFillObject,
+              {
+                backgroundColor: mode === 'light' ? colors.text : colors.background,
+                opacity: mode === 'light' ? 0.35 : 0.78,
+              },
+            ]}
+            onPress={() => setNotificationsOpen(false)}
+          />
+
+          <View
+            style={[
+              styles.modalCard,
+              {
+                backgroundColor: colors.card,
+                borderColor: colors.border,
+                shadowColor: mode === 'light' ? colors.text : colors.background,
+              },
+            ]}
+          >
+            <View style={styles.modalHeaderRow}>
+              <Text style={[styles.modalTitle, { color: colors.text }]}>{notificationsTitle}</Text>
+              <TouchableOpacity
+                activeOpacity={0.85}
+                onPress={() => setNotificationsOpen(false)}
+                style={[styles.smallPill, { borderColor: colors.border }]}
+                accessibilityRole="button"
+                accessibilityLabel="Close notifications"
+              >
+                <Text style={[styles.smallPillText, { color: colors.subtext }]}>{closeLabel}</Text>
+              </TouchableOpacity>
+            </View>
+
+            <NotificationList
+              notifications={notificationItems}
+              emptyText={language === 'sinhala' ? 'දැනුම්දීම් නොමැත' : language === 'tamil' ? 'அறிவிப்புகள் இல்லை' : 'No notifications'}
+              onPressItem={(id) => {
+                const req = requests.find((r) => String(r.notification_id) === String(id));
+                if (req) setSelectedRequestId(req.notification_id);
+                setActiveTab('requests');
+                setNotificationsOpen(false);
+              }}
+            />
+          </View>
+        </View>
+      </Modal>
+
+      <View style={{ flex: 1, backgroundColor: colors.background }}>
         <View style={styles.headerRow}>
           <Text style={[styles.title, { color: colors.primary }]}>{title}</Text>
-          <View style={{ flexDirection: 'row', gap: 12 }}>
-            {!!onBack && (
-              <TouchableOpacity onPress={onBack} activeOpacity={0.75}>
-                <Text style={[styles.backText, { color: colors.primary }]}>
-                  {language === 'sinhala' ? 'ආපසු' : language === 'tamil' ? 'பின்செல்' : 'Back'}
-                </Text>
-              </TouchableOpacity>
-            )}
-            {!!onLogout && (
-              <TouchableOpacity onPress={onLogout} activeOpacity={0.75}>
-                <Text style={[styles.backText, { color: colors.primary }]}>
-                  {language === 'sinhala' ? 'පිටවන්න' : language === 'tamil' ? 'வெளியேறு' : 'Logout'}
-                </Text>
+          <View style={{ flexDirection: 'row', gap: 12, alignItems: 'center' }}>
+            <TouchableOpacity
+              onPress={() => setNotificationsOpen(true)}
+              activeOpacity={0.8}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              accessibilityRole="button"
+              accessibilityLabel="Notifications"
+              style={styles.bellWrap}
+            >
+              <Text style={[styles.bellIcon, { color: colors.text }]}>🔔</Text>
+              {unreadCount > 0 && (
+                <View style={[styles.badge, { backgroundColor: colors.danger, borderColor: colors.background }]}>
+                  <Text style={styles.badgeText}>{unreadCount}</Text>
+                </View>
+              )}
+            </TouchableOpacity>
+
+            {activeTab !== 'home' && (
+              <TouchableOpacity
+                onPress={() => setActiveTab('home')}
+                activeOpacity={0.75}
+                accessibilityRole="button"
+                accessibilityLabel="Back"
+              >
+                <Text style={[styles.backText, { color: colors.primary }]}>{backLabel}</Text>
               </TouchableOpacity>
             )}
           </View>
         </View>
 
-        {!!errorMessage && (
-          <View style={styles.errorWrap}>
-            <Text style={styles.errorIcon}>⚠️</Text>
-            <Text style={[styles.errorText, { color: colors.text }]}>{errorMessage}</Text>
+        {activeTab === 'map' ? (
+          <View style={{ flex: 1, paddingHorizontal: 16, paddingTop: 10, paddingBottom: 10 }}>
+            <View style={styles.mapHeaderRow}>
+              <Text style={[styles.sectionTitle, { color: colors.text }]}>{mapTitle}</Text>
+              <TouchableOpacity
+                activeOpacity={0.85}
+                onPress={() => {
+                  setMapLoadError(false);
+                  setMapRefreshTick((t) => t + 1);
+
+                  // Best-effort: update live coords without prompting for permissions.
+                  if (Platform.OS === 'web') return;
+                  void (async () => {
+                    try {
+                      const perm = await Location.getForegroundPermissionsAsync();
+                      if (perm.status !== Location.PermissionStatus.GRANTED) return;
+                      const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+                      const lat = pos?.coords?.latitude;
+                      const lng = pos?.coords?.longitude;
+                      if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+                      setLiveCoords({ latitude: lat, longitude: lng });
+                    } catch {
+                      // ignore
+                    }
+                  })();
+                }}
+                style={[styles.smallPill, { borderColor: colors.border }]}
+                accessibilityRole="button"
+                accessibilityLabel="Refresh map location"
+              >
+                <Text style={[styles.smallPillText, { color: colors.subtext }]}>📍 {refreshMapLabel}</Text>
+              </TouchableOpacity>
+            </View>
+            {mapLoadError ? (
+              <View style={[styles.panelCard, { backgroundColor: colors.card, borderColor: colors.border, flex: 1, alignItems: 'center', justifyContent: 'center' }]}>
+                <Text style={[styles.cardText, { color: colors.subtext, textAlign: 'center' }]}>Map failed to load.</Text>
+              </View>
+            ) : (
+              <View style={{ flex: 1, borderRadius: 18, overflow: 'hidden', borderWidth: 1, borderColor: colors.border }}>
+                <MapLibreView
+                  styleUrl={MAPLIBRE_STYLE_STREETS_URL}
+                  markers={mapMarkers}
+                  polyline={mapPolyline}
+                  focus={mapFocus}
+                  onLoadError={() => setMapLoadError(true)}
+                />
+              </View>
+            )}
           </View>
+        ) : (
+          <ScrollView
+            style={{ flex: 1, backgroundColor: colors.background }}
+            contentContainerStyle={{ paddingBottom: Math.max(110, insets.bottom + 90) }}
+            showsVerticalScrollIndicator={false}
+          >
+            {!!errorMessage && activeTab !== 'profile' && (
+              <View style={styles.errorWrap}>
+                <Text style={styles.errorIcon}>⚠️</Text>
+                <Text style={[styles.errorText, { color: colors.text }]}>{errorMessage}</Text>
+              </View>
+            )}
+
+            {activeTab === 'home' ? (
+              <View style={{ paddingTop: 6 }}>
+                <AmbulanceStatusCard
+                  colors={{ background: colors.background, card: colors.card, text: colors.text, subtext: colors.subtext, border: colors.border, primary: colors.primary }}
+                  status={status}
+                  loading={loadingStatus}
+                  sharing={sharing}
+                  errorMessage={errorMessage}
+                  liveCoords={liveCoords}
+                  onRefresh={fetchStatus}
+                  onToggleAvailability={() => {
+                    if (!status) return;
+                    void setAvailability(!status.is_available);
+                  }}
+                  onToggleSharing={() => {
+                    if (sharing) {
+                      void stopSharing();
+                    } else {
+                      void startSharing();
+                    }
+                  }}
+                  regNumber={regNumber}
+                  regDriverName={regDriverName}
+                  regDriverPhone={regDriverPhone}
+                  regSubmitting={regSubmitting}
+                  setRegNumber={setRegNumber}
+                  setRegDriverName={setRegDriverName}
+                  setRegDriverPhone={setRegDriverPhone}
+                  onSubmitRegister={() => {
+                    void submitRegisterAmbulance();
+                  }}
+                />
+
+                <View style={{ paddingHorizontal: 20, marginTop: 12 }}>
+                  <View style={[styles.panelCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                    <Text style={[styles.sectionTitle, { color: colors.text }]}>{quickActionsTitle}</Text>
+                    <View style={styles.quickRow}>
+                      <TouchableOpacity
+                        style={[styles.quickBtn, { borderColor: colors.border, opacity: canCall ? 1 : 0.5 }]}
+                        activeOpacity={0.85}
+                        disabled={!canCall}
+                        onPress={() => {
+                          if (!patientPhone) return;
+                          const tel = String(patientPhone).replace(/\s+/g, '');
+                          void Linking.openURL(`tel:${tel}`);
+                        }}
+                        accessibilityRole="button"
+                        accessibilityLabel="Call patient"
+                      >
+                        <Text style={[styles.quickBtnText, { color: colors.text }]}>{callPatientLabel}</Text>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        style={[styles.quickBtn, { borderColor: colors.border, opacity: canOpenRoute ? 1 : 0.5 }]}
+                        activeOpacity={0.85}
+                        disabled={!canOpenRoute}
+                        onPress={() => {
+                          setMapLoadError(false);
+                          setActiveTab('map');
+                        }}
+                        accessibilityRole="button"
+                        accessibilityLabel="Open route"
+                      >
+                        <Text style={[styles.quickBtnText, { color: colors.text }]}>{openRouteLabel}</Text>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        style={[styles.quickBtn, { borderColor: colors.border, opacity: canToggleAvailability ? 1 : 0.5 }]}
+                        activeOpacity={0.85}
+                        disabled={!canToggleAvailability}
+                        onPress={() => {
+                          if (!status) return;
+                          void setAvailability(!status.is_available);
+                        }}
+                        accessibilityRole="button"
+                        accessibilityLabel="Toggle availability"
+                      >
+                        <Text style={[styles.quickBtnText, { color: colors.text }]}>{toggleAvailLabel}</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                </View>
+
+                <View style={{ paddingTop: 12 }}>
+                  <AmbulanceRequestsCard
+                    colors={{ card: colors.card, text: colors.text, subtext: colors.subtext, border: colors.border, primary: colors.primary, danger: colors.danger }}
+                    status={status}
+                    loadingRequests={loadingRequests}
+                    requests={requests}
+                    onRefreshRequests={fetchRequests}
+                    ambulanceCoords={ambulanceCoords}
+                    markers={allMarkers}
+                    selectedRequestId={selectedRequestId}
+                    onSelectRequestId={setSelectedRequestId}
+                    staticMapUrl={staticMapUrl}
+                    staticMapStatus={staticMapStatus}
+                    onStaticMapLoad={() => setStaticMapStatus('ready')}
+                    onStaticMapError={() => setStaticMapStatus('error')}
+                    activeMission={activeMission}
+                    routeLoading={routeLoading}
+                    routeSummary={routeSummary}
+                    routeLine={routeLine}
+                    routeError={routeError}
+                    routeSteps={routeSteps}
+                    reachedPatient={reachedPatient}
+                    patientPhone={patientPhone}
+                    onAccept={(id) => { void acceptRequest(id); }}
+                    onReject={(id) => { void rejectRequest(id); }}
+                    onCompleteMission={() => { void completeMission(); }}
+                  />
+                </View>
+              </View>
+            ) : activeTab === 'requests' ? (
+              <View style={{ paddingTop: 12 }}>
+                <AmbulanceRequestsCard
+                  colors={{ card: colors.card, text: colors.text, subtext: colors.subtext, border: colors.border, primary: colors.primary, danger: colors.danger }}
+                  status={status}
+                  loadingRequests={loadingRequests}
+                  requests={requests}
+                  onRefreshRequests={fetchRequests}
+                  ambulanceCoords={ambulanceCoords}
+                  markers={allMarkers}
+                  selectedRequestId={selectedRequestId}
+                  onSelectRequestId={setSelectedRequestId}
+                  staticMapUrl={staticMapUrl}
+                  staticMapStatus={staticMapStatus}
+                  onStaticMapLoad={() => setStaticMapStatus('ready')}
+                  onStaticMapError={() => setStaticMapStatus('error')}
+                  activeMission={activeMission}
+                  routeLoading={routeLoading}
+                  routeSummary={routeSummary}
+                  routeLine={routeLine}
+                  routeError={routeError}
+                  routeSteps={routeSteps}
+                  reachedPatient={reachedPatient}
+                  patientPhone={patientPhone}
+                  onAccept={(id) => { void acceptRequest(id); }}
+                  onReject={(id) => { void rejectRequest(id); }}
+                  onCompleteMission={() => { void completeMission(); }}
+                />
+              </View>
+            ) : activeTab === 'history' ? (
+              <View style={{ paddingHorizontal: 20, paddingTop: 14 }}>
+                <View style={[styles.panelCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                  <Text style={[styles.sectionTitle, { color: colors.text }]}>{historyTitle}</Text>
+                  {history.length === 0 ? (
+                    <Text style={[styles.cardText, { color: colors.subtext, marginTop: 8 }]}>
+                      {language === 'sinhala' ? 'ඉතිහාස දත්ත නොමැත.' : language === 'tamil' ? 'வரலாறு இல்லை.' : 'No completed missions yet.'}
+                    </Text>
+                  ) : (
+                    history.map((h) => (
+                      <View key={h.id} style={[styles.historyRow, { borderTopColor: colors.border }]}>
+                        <Text style={[styles.historyTitle, { color: colors.text }]} numberOfLines={1}>{h.title}</Text>
+                        <Text style={[styles.historyTime, { color: colors.subtext }]}>
+                          {String(h.completedAt).replace('T', ' ').slice(0, 19)}
+                        </Text>
+                      </View>
+                    ))
+                  )}
+                </View>
+              </View>
+            ) : (
+              <View style={{ paddingHorizontal: 20, paddingTop: 14 }}>
+                {!!profileLoadError && (
+                  <View style={[styles.errorWrap, { paddingHorizontal: 0, marginTop: 0 }] }>
+                    <Text style={styles.errorIcon}>⚠️</Text>
+                    <Text style={[styles.errorText, { color: colors.text }]}>{profileLoadError}</Text>
+                  </View>
+                )}
+
+                {profileView === 'verify-email' ? (
+                  <EmailChangeVerificationCard
+                    pendingEmail={pendingEmail}
+                    onVerified={() => {
+                      setUser((u) => ({ ...u, email: pendingEmail }));
+                      setPendingEmail('');
+                      setProfileView('view');
+                    }}
+                    onCancel={() => {
+                      setPendingEmail('');
+                      setProfileView('edit');
+                    }}
+                  />
+                ) : profileView === 'edit' ? (
+                  <ProfileEditCard
+                    user={user}
+                    onSave={(next) => {
+                      setUser(next);
+                      setProfileView('view');
+                    }}
+                    onCancel={() => setProfileView('view')}
+                    onRequestEmailChange={(email) => {
+                      setPendingEmail(email);
+                      setProfileView('verify-email');
+                    }}
+                  />
+                ) : (
+                  <ProfileViewCard user={user} onEdit={() => setProfileView('edit')} />
+                )}
+
+                {!!onLogout && (
+                  <TouchableOpacity
+                    style={[styles.profileLogoutBtn, { borderColor: colors.danger }]}
+                    activeOpacity={0.85}
+                    onPress={onLogout}
+                    accessibilityRole="button"
+                    accessibilityLabel="Logout"
+                  >
+                    <Text style={[styles.profileLogoutText, { color: colors.danger }]}>
+                      {language === 'sinhala' ? 'පිටවීම' : language === 'tamil' ? 'வெளியேறு' : 'Logout'}
+                    </Text>
+                  </TouchableOpacity>
+                )}
+
+                <View style={{ marginTop: 12, gap: 12 }}>
+                  <LanguagePickerInline />
+                  <ThemeToggleCard />
+                  <DeleteAccountCard />
+                </View>
+              </View>
+            )}
+          </ScrollView>
         )}
+      </View>
 
-        <AmbulanceStatusCard
-          colors={{ background: colors.background, card: colors.card, text: colors.text, subtext: colors.subtext, border: colors.border, primary: colors.primary }}
-          status={status}
-          loading={loadingStatus}
-          sharing={sharing}
-          errorMessage={errorMessage}
-          liveCoords={liveCoords}
-          onRefresh={fetchStatus}
-          onToggleAvailability={() => {
-            if (!status) return;
-            void setAvailability(!status.is_available);
-          }}
-          onToggleSharing={() => {
-            if (sharing) {
-              void stopSharing();
-            } else {
-              void startSharing();
-            }
-          }}
-          regNumber={regNumber}
-          regDriverName={regDriverName}
-          regDriverPhone={regDriverPhone}
-          regSubmitting={regSubmitting}
-          setRegNumber={setRegNumber}
-          setRegDriverName={setRegDriverName}
-          setRegDriverPhone={setRegDriverPhone}
-          onSubmitRegister={() => {
-            void submitRegisterAmbulance();
-          }}
-        />
-
-        <AmbulanceRequestsCard
-          colors={{ card: colors.card, text: colors.text, subtext: colors.subtext, border: colors.border, primary: colors.primary, danger: colors.danger }}
-          status={status}
-          loadingRequests={loadingRequests}
-          requests={requests}
-          onRefreshRequests={fetchRequests}
-          ambulanceCoords={ambulanceCoords}
-          markers={allMarkers}
-          selectedRequestId={selectedRequestId}
-          onSelectRequestId={setSelectedRequestId}
-          staticMapUrl={staticMapUrl}
-          staticMapStatus={staticMapStatus}
-          onStaticMapLoad={() => setStaticMapStatus('ready')}
-          onStaticMapError={() => setStaticMapStatus('error')}
-          activeMission={activeMission}
-          routeLoading={routeLoading}
-          routeSummary={routeSummary}
-          routeLine={routeLine}
-          routeError={routeError}
-          routeSteps={routeSteps}
-          reachedPatient={reachedPatient}
-          patientPhone={patientPhone}
-          onAccept={(id) => { void acceptRequest(id); }}
-          onReject={(id) => { void rejectRequest(id); }}
-          onCompleteMission={() => { void completeMission(); }}
-        />
-      </ScrollView>
+      <AmbulanceTabs activeTab={activeTab} onChange={setActiveTab} />
     </SafeAreaView>
   );
 }
@@ -813,6 +1363,127 @@ const styles = StyleSheet.create({
   },
   title: { fontSize: 18, fontWeight: '900' },
   backText: { fontSize: 14, fontWeight: '900' },
+  bellWrap: {
+    position: 'relative',
+    paddingHorizontal: 6,
+    paddingVertical: 4,
+  },
+  bellIcon: {
+    fontSize: 20,
+  },
+  badge: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+  },
+  badgeText: {
+    color: '#ffffff',
+    fontSize: 11,
+    fontWeight: '900',
+    paddingHorizontal: 4,
+  },
+  panelCard: {
+    borderWidth: 1,
+    borderRadius: 18,
+    padding: 16,
+  },
+  cardText: {
+    fontSize: 13,
+    fontWeight: '700',
+    lineHeight: 18,
+  },
+  quickRow: {
+    marginTop: 12,
+    flexDirection: 'row',
+    gap: 10,
+  },
+  quickBtn: {
+    flex: 1,
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 10,
+    alignItems: 'center',
+    backgroundColor: 'transparent',
+  },
+  quickBtnText: {
+    fontSize: 12,
+    fontWeight: '900',
+    textAlign: 'center',
+  },
+  mapHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+  },
+  historyRow: {
+    paddingVertical: 12,
+    borderTopWidth: 1,
+    marginTop: 10,
+  },
+  historyTitle: {
+    fontSize: 13,
+    fontWeight: '900',
+  },
+  historyTime: {
+    marginTop: 6,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  profileLogoutBtn: {
+    marginTop: 14,
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingVertical: 12,
+    alignItems: 'center',
+    backgroundColor: 'transparent',
+  },
+  profileLogoutText: {
+    fontSize: 13,
+    fontWeight: '900',
+  },
+  modalWrap: {
+    flex: 1,
+    justifyContent: 'center',
+    paddingHorizontal: 18,
+  },
+  modalCard: {
+    borderWidth: 1,
+    borderRadius: 18,
+    padding: 14,
+    shadowOpacity: 0.15,
+    shadowRadius: 18,
+    elevation: 8,
+  },
+  modalHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+    marginBottom: 10,
+  },
+  modalTitle: {
+    fontSize: 15,
+    fontWeight: '900',
+    flex: 1,
+  },
+  smallPill: {
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  smallPillText: {
+    fontSize: 12,
+    fontWeight: '900',
+  },
   errorWrap: {
     paddingHorizontal: 20,
     marginTop: 10,
