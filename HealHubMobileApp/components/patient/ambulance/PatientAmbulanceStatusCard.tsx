@@ -1,7 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, Image } from 'react-native';
+import { View, Text, StyleSheet, Image, Platform, TouchableOpacity, Linking } from 'react-native';
+import * as Location from 'expo-location';
 
 import { apiGet } from '../../../utils/api';
+import MapLibreView, { MAPLIBRE_STYLE_STREETS_URL } from '../../maps/MapLibreView';
+import { MapErrorBoundary } from '../../ambulance/MapErrorBoundary';
+import { buildStaticOsmMapUrl } from '../../ambulance/utils';
 
 type PatientNotification = {
   notification_id: number;
@@ -25,9 +29,39 @@ function extractMetaValue(text: string | undefined | null, key: string): string 
   return match ? String(match[1]) : null;
 }
 
+function extractPhoneLoose(text: string | undefined | null): string | null {
+  if (!text) return null;
+  // Prefer a meta field if present.
+  const meta = extractMetaValue(text, 'meta_ambulance_phone');
+  if (meta) return meta;
+  // Fallback: try to parse from "Driver: name phone".
+  const m = String(text).match(/Driver:\s*[^\n]*?([+]?\d[\d\s\-()]{6,})/i);
+  if (m && m[1]) return String(m[1]).trim();
+  return null;
+}
+
+function extractAmbulanceNumber(text: string | undefined | null): string | null {
+  const meta = extractMetaValue(text, 'meta_ambulance_number');
+  if (meta) return meta;
+  const m = String(text || '').match(/Ambulance\s+([^\s]+)\s+(accepted|rejected|is)/i);
+  if (m && m[1]) return String(m[1]).trim();
+  return null;
+}
+
+function approxDistanceMeters(a: { lat: number; lng: number }, b: { lat: number; lng: number }): number {
+  // Equirectangular approximation; fine for small distances.
+  const toRad = (x: number) => (x * Math.PI) / 180;
+  const x = toRad(b.lng - a.lng) * Math.cos(toRad((a.lat + b.lat) / 2));
+  const y = toRad(b.lat - a.lat);
+  return Math.sqrt(x * x + y * y) * 6371000;
+}
+
 export default function PatientAmbulanceStatusCard({ accessToken, language, colors, ambulanceStatus }: Props) {
   const [trackedAmbulance, setTrackedAmbulance] = useState<{ lat: number; lng: number; lastUpdated?: string | null } | null>(null);
+  const [trackedAvailable, setTrackedAvailable] = useState<boolean | null>(null);
   const [trackingError, setTrackingError] = useState<string>('');
+  const [mapStatus, setMapStatus] = useState<'loading' | 'ready' | 'error'>('loading');
+  const [livePatientCoords, setLivePatientCoords] = useState<{ lat: number; lng: number } | null>(null);
 
   const activeAmbulanceId = useMemo(() => {
     const idText = extractMetaValue(ambulanceStatus?.message, 'meta_ambulance_id');
@@ -43,6 +77,50 @@ export default function PatientAmbulanceStatusCard({ accessToken, language, colo
     if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
     return { lat, lng };
   }, [ambulanceStatus?.message]);
+
+  // Keep the patient's marker updated in realtime (no refresh required).
+  // We avoid prompting for permission here; if permission is already granted (likely from the request flow), we watch.
+  useEffect(() => {
+    if (Platform.OS === 'web') return;
+    if (!ambulanceStatus) {
+      setLivePatientCoords(null);
+      return;
+    }
+
+    let sub: Location.LocationSubscription | null = null;
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const perm = await Location.getForegroundPermissionsAsync();
+        if (cancelled) return;
+        if (perm.status !== Location.PermissionStatus.GRANTED) return;
+
+        sub = await Location.watchPositionAsync(
+          {
+            accuracy: Location.Accuracy.Balanced,
+            timeInterval: 2500,
+            distanceInterval: 3,
+          },
+          (pos) => {
+            const lat = pos?.coords?.latitude;
+            const lng = pos?.coords?.longitude;
+            if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+            setLivePatientCoords({ lat, lng });
+          }
+        );
+      } catch {
+        // ignore
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      try { sub?.remove(); } catch {
+        // ignore
+      }
+    };
+  }, [ambulanceStatus]);
 
   useEffect(() => {
     let cancelled = false;
@@ -64,6 +142,11 @@ export default function PatientAmbulanceStatusCard({ accessToken, language, colo
         }
 
         const data = res.data?.data ?? {};
+        if (typeof data.is_available === 'boolean') {
+          setTrackedAvailable(Boolean(data.is_available));
+        } else {
+          setTrackedAvailable(null);
+        }
         const lat = Number(data.current_latitude);
         const lng = Number(data.current_longitude);
         if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
@@ -86,28 +169,67 @@ export default function PatientAmbulanceStatusCard({ accessToken, language, colo
     };
   }, [accessToken, activeAmbulanceId]);
 
-  const trackingMapUrl = useMemo(() => {
+  const mapMarkers = useMemo(() => {
+    const list: Array<{
+      id: string | number;
+      lat: number;
+      lng: number;
+      color?: string;
+      title?: string;
+      kind?: 'ambulance' | 'patient' | 'pin' | 'default';
+      iconText?: string;
+    }> = [];
+    const patientCoords = livePatientCoords ?? patientRequestCoords;
+    if (patientCoords) {
+      list.push({
+        id: 'patient',
+        lat: patientCoords.lat,
+        lng: patientCoords.lng,
+        color: colors.text,
+        title: language === 'sinhala' ? 'ඔබ' : language === 'tamil' ? 'நீங்கள்' : 'You',
+        kind: 'patient',
+      });
+    }
+    if (trackedAmbulance) {
+      list.push({
+        id: 'ambulance',
+        lat: trackedAmbulance.lat,
+        lng: trackedAmbulance.lng,
+        color: colors.text,
+        title: language === 'sinhala' ? 'ඇම්බියුලන්ස්' : language === 'tamil' ? 'ஆம்புலன்ஸ்' : 'Ambulance',
+        kind: 'ambulance',
+      });
+    }
+    return list;
+  }, [colors.text, language, livePatientCoords, patientRequestCoords, trackedAmbulance]);
+
+  const ambulancePhone = useMemo(() => extractPhoneLoose(ambulanceStatus?.message), [ambulanceStatus?.message]);
+  const ambulanceNumber = useMemo(() => extractAmbulanceNumber(ambulanceStatus?.message), [ambulanceStatus?.message]);
+
+  const hasReached = useMemo(() => {
+    const patientCoords = livePatientCoords ?? patientRequestCoords;
+    if (!patientCoords || !trackedAmbulance) return false;
+    return approxDistanceMeters(patientCoords, trackedAmbulance) <= 40;
+  }, [livePatientCoords, patientRequestCoords, trackedAmbulance]);
+
+  const staticMapUrl = useMemo(() => {
     if (!patientRequestCoords && !trackedAmbulance) return null;
 
     const centerLat = patientRequestCoords?.lat ?? trackedAmbulance?.lat ?? 0;
     const centerLng = patientRequestCoords?.lng ?? trackedAmbulance?.lng ?? 0;
     const zoom = patientRequestCoords && trackedAmbulance ? 14 : 13;
 
-    const params: string[] = [];
-    params.push(`center=${encodeURIComponent(String(centerLat))},${encodeURIComponent(String(centerLng))}`);
-    params.push(`zoom=${encodeURIComponent(String(zoom))}`);
-    params.push('size=640x360');
-    params.push('maptype=mapnik');
+    const markers: Array<{ lat: number; lng: number; color: 'red' | 'blue' }> = [];
+    if (patientRequestCoords) markers.push({ lat: patientRequestCoords.lat, lng: patientRequestCoords.lng, color: 'red' });
+    if (trackedAmbulance) markers.push({ lat: trackedAmbulance.lat, lng: trackedAmbulance.lng, color: 'blue' });
 
-    if (patientRequestCoords) {
-      params.push(`markers=${encodeURIComponent(String(patientRequestCoords.lat))},${encodeURIComponent(String(patientRequestCoords.lng))},red-pushpin`);
-    }
-    if (trackedAmbulance) {
-      params.push(`markers=${encodeURIComponent(String(trackedAmbulance.lat))},${encodeURIComponent(String(trackedAmbulance.lng))},blue-pushpin`);
-      params.push(`ts=${encodeURIComponent(String(Date.now()))}`);
-    }
-
-    return `https://staticmap.openstreetmap.de/staticmap.php?${params.join('&')}`;
+    return buildStaticOsmMapUrl({
+      centerLat,
+      centerLng,
+      zoom,
+      markers,
+      cacheBuster: trackedAmbulance ? String(Date.now()) : undefined,
+    });
   }, [patientRequestCoords, trackedAmbulance]);
 
   return (
@@ -145,14 +267,94 @@ export default function PatientAmbulanceStatusCard({ accessToken, language, colo
         </Text>
       )}
 
-      {!!trackingMapUrl && (
+      {trackedAvailable === false && !!activeAmbulanceId && (
+        <Text style={[styles.cardText, { color: colors.subtext, marginTop: 8 }]}>
+          {language === 'sinhala'
+            ? 'ඇම්බියුලන්ස් ගමන් කරමින් ඇත.'
+            : language === 'tamil'
+              ? 'ஆம்புலன்ஸ் வருகையில் உள்ளது.'
+              : 'Ambulance is on the way.'}
+        </Text>
+      )}
+
+      {!!ambulancePhone && (
+        <TouchableOpacity
+          activeOpacity={0.85}
+          style={[styles.callBtn, { borderColor: colors.border }]}
+          onPress={() => {
+            if (Platform.OS === 'web') return;
+            void Linking.openURL(`tel:${encodeURIComponent(String(ambulancePhone))}`);
+          }}
+        >
+          <Text style={[styles.callBtnText, { color: colors.text }]}>
+            {language === 'sinhala'
+              ? `ඇම්බියුලන්ස් අමතන්න${ambulanceNumber ? ` (${ambulanceNumber})` : ''}`
+              : language === 'tamil'
+                ? `ஆம்புலன்ஸை அழைக்க${ambulanceNumber ? ` (${ambulanceNumber})` : ''}`
+                : `Call ambulance${ambulanceNumber ? ` (${ambulanceNumber})` : ''}`}
+          </Text>
+          <Text style={[styles.callBtnSub, { color: colors.subtext }]}>{ambulancePhone}</Text>
+        </TouchableOpacity>
+      )}
+
+      {hasReached && (
+        <Text style={[styles.cardText, { color: colors.subtext, marginTop: 8 }]}> 
+          {language === 'sinhala'
+            ? 'ඇම්බියුලන්ස් ඔබ වෙත ළඟා වී ඇත.'
+            : language === 'tamil'
+              ? 'ஆம்புலன்ஸ் உங்களை அடைந்துள்ளது.'
+              : 'Ambulance has reached you.'}
+        </Text>
+      )}
+
+      {trackedAvailable === true && !!activeAmbulanceId && (
+        <Text style={[styles.cardText, { color: colors.subtext, marginTop: 8 }]}>
+          {language === 'sinhala'
+            ? 'ඇම්බියුලන්ස් දැන් ලබා ගත හැක (මෙහෙයුම අවසන් වී ඇති olabilir).'
+            : language === 'tamil'
+              ? 'ஆம்புலன்ஸ் தற்போது கிடைக்கிறது (பயணம் முடிந்திருக்கலாம்).'
+              : 'Ambulance is now available (mission may be completed).'}
+        </Text>
+      )}
+
+      {!!staticMapUrl && (
         <View style={[styles.ambulanceMapWrap, { borderColor: colors.border }]}
         >
-          <Image
-            source={{ uri: trackingMapUrl }}
-            style={StyleSheet.absoluteFillObject}
-            resizeMode="cover"
-          />
+          {Platform.OS === 'web' ? (
+            <Image
+              source={{ uri: staticMapUrl }}
+              style={StyleSheet.absoluteFillObject}
+              resizeMode="cover"
+            />
+          ) : (
+            <MapErrorBoundary
+              fallback={(
+                <Image
+                  source={{ uri: staticMapUrl }}
+                  style={StyleSheet.absoluteFillObject}
+                  resizeMode="cover"
+                />
+              )}
+            >
+              <View style={StyleSheet.absoluteFillObject}>
+                <MapLibreView
+                  styleUrl={MAPLIBRE_STYLE_STREETS_URL}
+                  markers={mapMarkers}
+                  polyline={null}
+                  focus={patientRequestCoords ? { lat: patientRequestCoords.lat, lng: patientRequestCoords.lng, zoom: 14 } : null}
+                  onLoadError={() => setMapStatus('error')}
+                />
+
+                {mapStatus === 'error' && (
+                  <Image
+                    source={{ uri: staticMapUrl }}
+                    style={StyleSheet.absoluteFillObject}
+                    resizeMode="cover"
+                  />
+                )}
+              </View>
+            </MapErrorBoundary>
+          )}
         </View>
       )}
     </View>
@@ -197,5 +399,21 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     overflow: 'hidden',
     borderWidth: 1,
+  },
+  callBtn: {
+    marginTop: 10,
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+  },
+  callBtnText: {
+    fontSize: 13,
+    fontWeight: '900',
+  },
+  callBtnSub: {
+    marginTop: 2,
+    fontSize: 12,
+    fontWeight: '700',
   },
 });

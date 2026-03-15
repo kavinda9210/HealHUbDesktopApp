@@ -7,6 +7,7 @@ import {
   StyleSheet,
   Platform,
   Image,
+  Linking,
 } from 'react-native';
 import MapLibreView from '../maps/MapLibreView';
 
@@ -41,8 +42,13 @@ type Props = {
   routeLine: Array<{ latitude: number; longitude: number }> | null;
   routeError: string;
 
+  routeSteps?: string[] | null;
+  reachedPatient?: boolean;
+  patientPhone?: string | null;
+
   onAccept: (notificationId: number) => void;
   onReject: (notificationId: number) => void;
+  onCompleteMission: () => void;
 };
 
 export default function AmbulanceRequestsCard(props: Props) {
@@ -65,12 +71,24 @@ export default function AmbulanceRequestsCard(props: Props) {
     routeSummary,
     routeLine,
     routeError,
+    routeSteps,
+    reachedPatient,
+    patientPhone,
     onAccept,
     onReject,
+    onCompleteMission,
   } = props;
 
   const mapMarkers = React.useMemo(() => {
-    const list: Array<{ id: string | number; lat: number; lng: number; color?: string; title?: string }> = [];
+    const list: Array<{
+      id: string | number;
+      lat: number;
+      lng: number;
+      color?: string;
+      title?: string;
+      kind?: 'ambulance' | 'patient' | 'pin' | 'default';
+      iconText?: string;
+    }> = [];
     if (ambulanceCoords) {
       list.push({
         id: 'ambulance',
@@ -78,6 +96,7 @@ export default function AmbulanceRequestsCard(props: Props) {
         lng: ambulanceCoords.longitude,
         color: colors.primary,
         title: status?.ambulance_number ? `Ambulance ${status.ambulance_number}` : 'Ambulance',
+        kind: 'ambulance',
       });
     }
     for (const m of markers) {
@@ -87,6 +106,7 @@ export default function AmbulanceRequestsCard(props: Props) {
         lng: m.lng,
         color: selectedRequestId === m.id ? colors.danger : '#2E8B57',
         title: m.title,
+        kind: 'patient',
       });
     }
     return list;
@@ -159,13 +179,49 @@ export default function AmbulanceRequestsCard(props: Props) {
       {!!activeMission && (
         <View style={[styles.routeCard, { borderTopColor: colors.border }]}
         >
-          <Text style={[styles.itemTitle, { color: colors.text }]}>Best route</Text>
+          <View style={styles.rowBetweenTight}>
+            <Text style={[styles.itemTitle, { color: colors.text }]}>Best route</Text>
+            <TouchableOpacity
+              activeOpacity={0.85}
+              style={[styles.outlineBtnSmall, { borderColor: colors.border }]}
+              onPress={onCompleteMission}
+            >
+              <Text style={[styles.outlineBtnText, { color: colors.subtext }]}>Complete</Text>
+            </TouchableOpacity>
+          </View>
           {routeLoading ? (
             <Text style={[styles.itemSub, { color: colors.subtext }]}>Calculating route…</Text>
           ) : routeSummary ? (
             <Text style={[styles.itemSub, { color: colors.subtext }]}>Distance: {routeSummary.distanceKm} km • ETA: {routeSummary.durationMin} min</Text>
           ) : (
             <Text style={[styles.itemSub, { color: colors.subtext }]}>{routeError || 'Route is not available.'}</Text>
+          )}
+
+          {reachedPatient && (
+            <Text style={[styles.itemSub, { color: colors.subtext, marginTop: 8 }]}>You reached the patient.</Text>
+          )}
+
+          {!!patientPhone && reachedPatient && (
+            <TouchableOpacity
+              activeOpacity={0.85}
+              style={[styles.outlineBtnSmall, { borderColor: colors.border, alignSelf: 'flex-start', marginTop: 10 }]}
+              onPress={() => {
+                if (Platform.OS === 'web') return;
+                void Linking.openURL(`tel:${encodeURIComponent(String(patientPhone))}`);
+              }}
+            >
+              <Text style={[styles.outlineBtnText, { color: colors.subtext }]}>Call patient • {patientPhone}</Text>
+            </TouchableOpacity>
+          )}
+
+          {!!routeSteps && routeSteps.length > 0 && (
+            <View style={{ marginTop: 10 }}>
+              {routeSteps.slice(0, 8).map((s, idx) => (
+                <Text key={String(idx)} style={[styles.stepText, { color: colors.subtext }]} numberOfLines={2}>
+                  {idx + 1}. {s}
+                </Text>
+              ))}
+            </View>
           )}
         </View>
       )}
@@ -235,6 +291,7 @@ const styles = StyleSheet.create({
     padding: 14,
   },
   rowBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
+  rowBetweenTight: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
   sectionTitle: { fontSize: 16, fontWeight: '900' },
   note: { marginTop: 10, fontSize: 12, fontWeight: '700' },
   mapWrap: {
@@ -277,6 +334,7 @@ const styles = StyleSheet.create({
   },
   itemTitle: { fontSize: 14, fontWeight: '900' },
   itemSub: { marginTop: 6, fontSize: 12, fontWeight: '700' },
+  stepText: { marginTop: 4, fontSize: 12, fontWeight: '700', lineHeight: 16 },
   primaryBtnSmall: {
     borderRadius: 10,
     paddingVertical: 8,

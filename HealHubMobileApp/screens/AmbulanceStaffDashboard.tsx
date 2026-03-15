@@ -73,6 +73,102 @@ function extractLatLng(text: string): { lat: number; lng: number } | null {
   return { lat, lng };
 }
 
+function extractMetaValue(text: string, key: string): string | null {
+  const lines = String(text || '').split(/\r?\n/);
+  const prefixes = [
+    `${key}:`,
+    `${key}=`,
+  ];
+
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    for (const p of prefixes) {
+      if (line.toLowerCase().startsWith(p.toLowerCase())) {
+        const v = line.slice(p.length).trim();
+        if (v) return v;
+      }
+    }
+  }
+  return null;
+}
+
+function extractPatientPhone(text: string): string | null {
+  const meta = extractMetaValue(text, 'meta_patient_phone');
+  if (meta) return meta;
+
+  const lines = String(text || '').split(/\r?\n/);
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    const m = line.match(/^(?:Patient\s*)?Phone\s*:\s*(.+)$/i);
+    if (m?.[1]) return m[1].trim();
+  }
+
+  // Last-resort: pick a phone-like token (keeps +, digits, spaces, hyphens)
+  const fallback = String(text || '').match(/\+?\d[\d\s-]{6,}\d/);
+  return fallback ? fallback[0].trim() : null;
+}
+
+function haversineMeters(a: LatLng, b: { lat: number; lng: number }): number {
+  const R = 6371000;
+  const toRad = (deg: number) => (deg * Math.PI) / 180;
+  const dLat = toRad(b.lat - a.latitude);
+  const dLng = toRad(b.lng - a.longitude);
+  const lat1 = toRad(a.latitude);
+  const lat2 = toRad(b.lat);
+
+  const s1 = Math.sin(dLat / 2);
+  const s2 = Math.sin(dLng / 2);
+  const h = s1 * s1 + Math.cos(lat1) * Math.cos(lat2) * s2 * s2;
+  return 2 * R * Math.asin(Math.min(1, Math.sqrt(h)));
+}
+
+function formatDistance(meters: number): string {
+  if (!Number.isFinite(meters) || meters <= 0) return '0 m';
+  if (meters >= 1000) return `${(meters / 1000).toFixed(1)} km`;
+  return `${Math.round(meters)} m`;
+}
+
+function formatOsrmStep(step: any): string | null {
+  const distance = Number(step?.distance);
+  const maneuverType = String(step?.maneuver?.type || '');
+  const modifier = String(step?.maneuver?.modifier || '');
+  const name = String(step?.name || '').trim();
+
+  const distText = Number.isFinite(distance) ? formatDistance(distance) : '';
+  const road = name ? ` on ${name}` : '';
+
+  if (maneuverType === 'arrive') return 'Arrive at destination';
+  if (maneuverType === 'depart') return distText ? `Start and continue for ${distText}${road}` : `Start${road}`;
+  if (maneuverType === 'roundabout' || maneuverType === 'rotary') {
+    return distText ? `Enter roundabout and continue for ${distText}${road}` : `Enter roundabout${road}`;
+  }
+
+  if (maneuverType === 'turn') {
+    const dir = modifier ? `Turn ${modifier}` : 'Turn';
+    return distText ? `${dir} in ${distText}${road}` : `${dir}${road}`;
+  }
+
+  if (maneuverType === 'merge') {
+    return distText ? `Merge in ${distText}${road}` : `Merge${road}`;
+  }
+
+  if (maneuverType === 'continue' || maneuverType === 'new name') {
+    return distText ? `Continue for ${distText}${road}` : `Continue${road}`;
+  }
+
+  if (maneuverType === 'fork') {
+    const dir = modifier ? `Keep ${modifier}` : 'Keep';
+    return distText ? `${dir} in ${distText}${road}` : `${dir}${road}`;
+  }
+
+  if (maneuverType === 'end of road') {
+    const dir = modifier ? `Turn ${modifier}` : 'Turn';
+    return distText ? `${dir} in ${distText}${road}` : `${dir}${road}`;
+  }
+
+  return null;
+}
+
 export default function AmbulanceStaffDashboard({ accessToken, onBack, onLogout }: AmbulanceStaffDashboardProps) {
   const { language } = useLanguage();
   const { colors, mode } = useTheme();
@@ -98,6 +194,16 @@ export default function AmbulanceStaffDashboard({ accessToken, onBack, onLogout 
   const [routeLine, setRouteLine] = useState<Array<{ latitude: number; longitude: number }> | null>(null);
   const [routeLoading, setRouteLoading] = useState(false);
   const [routeError, setRouteError] = useState('');
+
+  const [routeSteps, setRouteSteps] = useState<string[] | null>(null);
+  const [reachedPatient, setReachedPatient] = useState(false);
+  const [patientPhone, setPatientPhone] = useState<string | null>(null);
+
+  const lastRouteComputeAtRef = useRef(0);
+
+  // Foreground realtime coords for immediate UI updates.
+  const [liveCoords, setLiveCoords] = useState<LatLng | null>(null);
+  const lastLocationPostAtRef = useRef(0);
 
   // Map is rendered via MapLibre (WebView) in AmbulanceRequestsCard.
 
@@ -190,9 +296,71 @@ export default function AmbulanceStaffDashboard({ accessToken, onBack, onLogout 
   }, [missionMarker, requestMarkers]);
 
   const ambulanceCoords = useMemo<LatLng | null>(() => {
+    if (liveCoords) return liveCoords;
     if (typeof status?.current_latitude !== 'number' || typeof status?.current_longitude !== 'number') return null;
     return { latitude: status.current_latitude, longitude: status.current_longitude };
-  }, [status?.current_latitude, status?.current_longitude]);
+  }, [liveCoords, status?.current_latitude, status?.current_longitude]);
+
+  // Keep the ambulance marker moving in realtime.
+  // - If permission is already granted, we start watching immediately (no prompts).
+  // - If permission isn't granted, we only request it when the user enables sharing.
+  useEffect(() => {
+    if (Platform.OS === 'web') return;
+    let sub: Location.LocationSubscription | null = null;
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const currentPerm = await Location.getForegroundPermissionsAsync();
+        const perm = (currentPerm.status === Location.PermissionStatus.GRANTED)
+          ? currentPerm
+          : (sharing ? await Location.requestForegroundPermissionsAsync() : currentPerm);
+        if (cancelled) return;
+        if (perm.status !== Location.PermissionStatus.GRANTED) {
+          return;
+        }
+
+        sub = await Location.watchPositionAsync(
+          {
+            accuracy: Location.Accuracy.Balanced,
+            timeInterval: 2000,
+            distanceInterval: 3,
+          },
+          (pos) => {
+            const lat = pos?.coords?.latitude;
+            const lng = pos?.coords?.longitude;
+            if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+            setLiveCoords({ latitude: lat, longitude: lng });
+
+            // Best-effort: also post to backend (throttled) to help patient tracking.
+            if (!sharing) return;
+            if (!accessToken) return;
+            const now = Date.now();
+            if (now - lastLocationPostAtRef.current < 4500) return;
+            lastLocationPostAtRef.current = now;
+            void apiPost<any>(
+              '/api/ambulance/update-location',
+              {
+                latitude: lat,
+                longitude: lng,
+                is_available: status?.is_available ?? true,
+              },
+              accessToken
+            );
+          }
+        );
+      } catch {
+        // ignore
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      try { sub?.remove(); } catch {
+        // ignore
+      }
+    };
+  }, [accessToken, sharing, status?.is_available]);
 
   const [staticMapStatus, setStaticMapStatus] = useState<'loading' | 'ready' | 'error'>('loading');
 
@@ -232,14 +400,18 @@ export default function AmbulanceStaffDashboard({ accessToken, onBack, onLogout 
     setRouteLoading(true);
     setRouteError('');
     try {
-      const url = `https://router.project-osrm.org/route/v1/driving/${from.longitude},${from.latitude};${to.lng},${to.lat}?overview=full&geometries=geojson`;
+      const url = `https://router.project-osrm.org/route/v1/driving/${from.longitude},${from.latitude};${to.lng},${to.lat}?overview=full&geometries=geojson&steps=true`;
       const res = await fetch(url);
       const json = await res.json();
       const route = Array.isArray(json?.routes) ? json.routes[0] : null;
       if (!route) {
         setRouteSummary(null);
-        setRouteLine(null);
-        setRouteError('Unable to compute route');
+        setRouteLine([
+          { latitude: from.latitude, longitude: from.longitude },
+          { latitude: to.lat, longitude: to.lng },
+        ]);
+        setRouteSteps(null);
+        setRouteError('Unable to compute best route (showing direct line).');
         return;
       }
 
@@ -261,10 +433,24 @@ export default function AmbulanceStaffDashboard({ accessToken, onBack, onLogout 
       } else {
         setRouteLine(null);
       }
+
+      const stepsRaw = route?.legs?.[0]?.steps;
+      if (Array.isArray(stepsRaw)) {
+        const formatted = stepsRaw
+          .map((s: any) => formatOsrmStep(s))
+          .filter((s: any): s is string => typeof s === 'string' && s.trim().length > 0);
+        setRouteSteps(formatted.length ? formatted : null);
+      } else {
+        setRouteSteps(null);
+      }
     } catch {
       setRouteSummary(null);
-      setRouteLine(null);
-      setRouteError('Unable to compute route');
+      setRouteLine([
+        { latitude: from.latitude, longitude: from.longitude },
+        { latitude: to.lat, longitude: to.lng },
+      ]);
+      setRouteSteps(null);
+      setRouteError('Unable to compute best route (showing direct line).');
     } finally {
       setRouteLoading(false);
     }
@@ -275,11 +461,30 @@ export default function AmbulanceStaffDashboard({ accessToken, onBack, onLogout 
     if (!ambulanceCoords) {
       setRouteSummary(null);
       setRouteLine(null);
+      setRouteSteps(null);
       return;
     }
+
+    const now = Date.now();
+    if (now - lastRouteComputeAtRef.current < 12000) return;
+    lastRouteComputeAtRef.current = now;
     void computeBestRoute(ambulanceCoords, { lat: activeMission.patientLat, lng: activeMission.patientLng });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeMission?.requestId, ambulanceCoords?.latitude, ambulanceCoords?.longitude]);
+
+  useEffect(() => {
+    if (!activeMission) {
+      setReachedPatient(false);
+      return;
+    }
+    if (reachedPatient) return;
+    if (!ambulanceCoords) return;
+
+    const dist = haversineMeters(ambulanceCoords, { lat: activeMission.patientLat, lng: activeMission.patientLng });
+    if (dist <= 60) {
+      setReachedPatient(true);
+    }
+  }, [activeMission, ambulanceCoords, reachedPatient]);
 
   const setAvailability = async (isAvailable: boolean) => {
     if (!accessToken) return;
@@ -295,29 +500,6 @@ export default function AmbulanceStaffDashboard({ accessToken, onBack, onLogout 
     await fetchStatus();
     await fetchRequests();
     await setLastAvailability(isAvailable);
-  };
-
-  const updateMyLocationOnce = async () => {
-    if (!accessToken) return;
-
-    const perm = await Location.requestForegroundPermissionsAsync();
-    if (perm.status !== Location.PermissionStatus.GRANTED) {
-      setErrorMessage('Location permission is required.');
-      return;
-    }
-
-    const current = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-    await apiPost<any>(
-      '/api/ambulance/update-location',
-      {
-        latitude: current.coords.latitude,
-        longitude: current.coords.longitude,
-        is_available: status?.is_available ?? true,
-      },
-      accessToken
-    );
-
-    await fetchStatus();
   };
 
   const startSharing = async () => {
@@ -337,13 +519,6 @@ export default function AmbulanceStaffDashboard({ accessToken, onBack, onLogout 
     await setShareEnabled(true);
     await startAmbulanceBackgroundLocationAsync();
     setSharing(true);
-
-    // Best-effort immediate update for faster UI feedback
-    try {
-      await updateMyLocationOnce();
-    } catch {
-      // ignore
-    }
   };
 
   const stopSharing = async () => {
@@ -360,6 +535,9 @@ export default function AmbulanceStaffDashboard({ accessToken, onBack, onLogout 
     const coords = req ? extractLatLng(req.message) : null;
 
     if (req && coords) {
+      setReachedPatient(false);
+      setPatientPhone(extractPatientPhone(req.message));
+      lastRouteComputeAtRef.current = 0;
       setActiveMission({
         requestId: notificationId,
         title: req.title,
@@ -377,6 +555,11 @@ export default function AmbulanceStaffDashboard({ accessToken, onBack, onLogout 
       setErrorMessage(String(msg));
       setActiveMission((m) => (m?.requestId === notificationId ? null : m));
       setSelectedRequestId((id) => (id === notificationId ? null : id));
+      setRouteSummary(null);
+      setRouteLine(null);
+      setRouteSteps(null);
+      setReachedPatient(false);
+      setPatientPhone(null);
       return;
     }
 
@@ -395,6 +578,30 @@ export default function AmbulanceStaffDashboard({ accessToken, onBack, onLogout 
       return;
     }
 
+    await fetchRequests();
+  };
+
+  const completeMission = async () => {
+    if (!accessToken) return;
+
+    setErrorMessage('');
+    const res = await apiPost<any>('/api/ambulance/complete-mission', {}, accessToken);
+    if (!res.ok || res.data?.success === false) {
+      const msg = (res.data && (res.data.message || res.data.error)) || 'Failed to complete mission';
+      setErrorMessage(String(msg));
+      return;
+    }
+
+    setActiveMission(null);
+    setSelectedRequestId(null);
+    setRouteSummary(null);
+    setRouteLine(null);
+    setRouteSteps(null);
+    setRouteError('');
+    setReachedPatient(false);
+    setPatientPhone(null);
+
+    await fetchStatus();
     await fetchRequests();
   };
 
@@ -538,13 +745,11 @@ export default function AmbulanceStaffDashboard({ accessToken, onBack, onLogout 
           loading={loadingStatus}
           sharing={sharing}
           errorMessage={errorMessage}
+          liveCoords={liveCoords}
           onRefresh={fetchStatus}
           onToggleAvailability={() => {
             if (!status) return;
             void setAvailability(!status.is_available);
-          }}
-          onUpdateLocationOnce={() => {
-            void updateMyLocationOnce();
           }}
           onToggleSharing={() => {
             if (sharing) {
@@ -584,8 +789,12 @@ export default function AmbulanceStaffDashboard({ accessToken, onBack, onLogout 
           routeSummary={routeSummary}
           routeLine={routeLine}
           routeError={routeError}
+          routeSteps={routeSteps}
+          reachedPatient={reachedPatient}
+          patientPhone={patientPhone}
           onAccept={(id) => { void acceptRequest(id); }}
           onReject={(id) => { void rejectRequest(id); }}
+          onCompleteMission={() => { void completeMission(); }}
         />
       </ScrollView>
     </SafeAreaView>

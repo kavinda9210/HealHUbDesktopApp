@@ -1,11 +1,14 @@
 import React, { useMemo, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, StatusBar, ActivityIndicator, Linking, Platform } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, StatusBar, ActivityIndicator, Linking, Platform, Image, Alert } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Location from 'expo-location';
 
 import { useLanguage } from '../context/LanguageContext';
 import { useTheme } from '../context/ThemeContext';
 import { apiPost } from '../utils/api';
+import MapLibreView, { MAPLIBRE_STYLE_STREETS_URL } from '../components/maps/MapLibreView';
+import { MapErrorBoundary } from '../components/ambulance/MapErrorBoundary';
+import { buildStaticOsmMapUrl } from '../components/ambulance/utils';
 
 type NearbyAmbulanceProps = {
   accessToken?: string;
@@ -60,6 +63,7 @@ export default function NearbyAmbulance({ accessToken, onBack }: NearbyAmbulance
   const [errorMessage, setErrorMessage] = useState('');
   const [requestingId, setRequestingId] = useState<number | null>(null);
   const [successMessage, setSuccessMessage] = useState('');
+  const [mapStatus, setMapStatus] = useState<'loading' | 'ready' | 'error'>('loading');
 
   const title = useMemo(() => {
     if (language === 'sinhala') return 'ආසන්න ඇම්බියුලන්ස්';
@@ -144,6 +148,8 @@ export default function NearbyAmbulance({ accessToken, onBack }: NearbyAmbulance
   const requestSpecificAmbulance = async (ambulanceId: number) => {
     if (!accessToken || !coords) return;
 
+    const selected = ambulances.find((a) => a.ambulance_id === ambulanceId) ?? null;
+
     setRequestingId(ambulanceId);
     setErrorMessage('');
     setSuccessMessage('');
@@ -161,11 +167,104 @@ export default function NearbyAmbulance({ accessToken, onBack }: NearbyAmbulance
       }
 
       setSuccessMessage(String(res.data?.message || 'Ambulance request sent'));
+
+      // Show the requested UX: alert with ambulance vehicle number + phone.
+      try {
+        const ambulanceNumber = selected?.ambulance_number ? String(selected.ambulance_number) : String(ambulanceId);
+        const phone = selected?.driver_phone ? String(selected.driver_phone) : '';
+        const alertTitle = language === 'sinhala'
+          ? 'ඉල්ලීම යවලා ඇත'
+          : language === 'tamil'
+            ? 'கோரிக்கை அனுப்பப்பட்டது'
+            : 'Request sent';
+        const alertBody = (language === 'sinhala'
+          ? `ඔබගේ ඉල්ලීම ඇම්බියුලන්ස් ${ambulanceNumber} වෙත යවා ඇත.`
+          : language === 'tamil'
+            ? `உங்கள் கோரிக்கை ஆம்புலன்ஸ் ${ambulanceNumber} க்கு அனுப்பப்பட்டது.`
+            : `Your request has been sent to ambulance ${ambulanceNumber}.`
+        ) + (phone ? `\nPhone: ${phone}` : '');
+
+        const buttons: any[] = [];
+        if (phone && Platform.OS !== 'web') {
+          buttons.push({
+            text: language === 'sinhala' ? 'අමතන්න' : language === 'tamil' ? 'அழைக்க' : 'Call',
+            onPress: () => {
+              void Linking.openURL(`tel:${encodeURIComponent(phone)}`);
+            },
+          });
+        }
+        buttons.push({ text: 'OK' });
+        Alert.alert(alertTitle, alertBody, buttons);
+      } catch {
+        // ignore
+      }
+
       await fetchNearby(coords.latitude, coords.longitude);
     } finally {
       setRequestingId(null);
     }
   };
+
+  const mapMarkers = useMemo(() => {
+    const list: Array<{
+      id: string | number;
+      lat: number;
+      lng: number;
+      color?: string;
+      title?: string;
+      kind?: 'ambulance' | 'patient' | 'pin' | 'default';
+      iconText?: string;
+    }> = [];
+
+    if (coords) {
+      list.push({
+        id: 'patient',
+        lat: coords.latitude,
+        lng: coords.longitude,
+        color: colors.danger,
+        title: language === 'sinhala' ? 'ඔබ' : language === 'tamil' ? 'நீங்கள்' : 'You',
+        kind: 'patient',
+      });
+    }
+
+    for (const a of ambulances) {
+      const lat = typeof a.current_latitude === 'number' ? a.current_latitude : null;
+      const lng = typeof a.current_longitude === 'number' ? a.current_longitude : null;
+      if (lat == null || lng == null) continue;
+      list.push({
+        id: a.ambulance_id,
+        lat,
+        lng,
+        color: colors.primary,
+        title: String(a.ambulance_number || 'Ambulance'),
+        kind: 'ambulance',
+      });
+    }
+
+    return list;
+  }, [ambulances, colors.danger, colors.primary, coords, language]);
+
+  const staticMapUrl = useMemo(() => {
+    const centerLat = coords?.latitude ?? (ambulances[0]?.current_latitude ?? 0);
+    const centerLng = coords?.longitude ?? (ambulances[0]?.current_longitude ?? 0);
+
+    const markers: Array<{ lat: number; lng: number; color: 'red' | 'blue' }> = [];
+    if (coords) markers.push({ lat: coords.latitude, lng: coords.longitude, color: 'red' });
+    for (const a of ambulances.slice(0, 8)) {
+      const lat = typeof a.current_latitude === 'number' ? a.current_latitude : null;
+      const lng = typeof a.current_longitude === 'number' ? a.current_longitude : null;
+      if (lat == null || lng == null) continue;
+      markers.push({ lat, lng, color: 'blue' });
+    }
+
+    return buildStaticOsmMapUrl({
+      centerLat: Number(centerLat) || 0,
+      centerLng: Number(centerLng) || 0,
+      zoom: coords ? 13 : 2,
+      markers,
+      cacheBuster: mapStatus === 'error' ? String(Date.now()) : undefined,
+    });
+  }, [ambulances, coords, mapStatus]);
 
   const emergencySurface = mode === 'dark' ? '#2b1d1f' : '#fee2e2';
 
@@ -247,6 +346,44 @@ export default function NearbyAmbulance({ accessToken, onBack }: NearbyAmbulance
 
         <View style={[styles.sectionCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <Text style={[styles.sectionTitle, { color: colors.text }]}>Ambulances</Text>
+
+          {(coords || mapMarkers.length > 0) ? (
+            <View style={[styles.mapWrap, { borderColor: colors.border }]}>
+              {Platform.OS === 'web' ? (
+                <View style={styles.mapFallbackCenter}>
+                  <Text style={[styles.note, { color: colors.subtext, marginTop: 0 }]}>Map is not available on web.</Text>
+                </View>
+              ) : (
+                <MapErrorBoundary
+                  fallback={(
+                    <View style={styles.mapFallbackCenter}>
+                      <Text style={[styles.note, { color: colors.subtext, marginTop: 0, textAlign: 'center' }]}>Map failed to load. Check your internet connection.</Text>
+                    </View>
+                  )}
+                >
+                  <View style={StyleSheet.absoluteFillObject}>
+                    <MapLibreView
+                      styleUrl={MAPLIBRE_STYLE_STREETS_URL}
+                      markers={mapMarkers}
+                      polyline={null}
+                      focus={coords ? { lat: coords.latitude, lng: coords.longitude, zoom: 13 } : null}
+                      onLoadError={() => setMapStatus('error')}
+                    />
+
+                    {mapStatus === 'error' && (
+                      <Image
+                        source={{ uri: staticMapUrl }}
+                        style={StyleSheet.absoluteFillObject}
+                        resizeMode="cover"
+                        onLoad={() => setMapStatus('ready')}
+                        onError={() => setMapStatus('error')}
+                      />
+                    )}
+                  </View>
+                </MapErrorBoundary>
+              )}
+            </View>
+          ) : null}
 
           {ambulances.map((a) => {
             const busy = a.is_available === false;
@@ -361,6 +498,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     minWidth: 140,
+  },
+  mapWrap: {
+    marginTop: 12,
+    height: 240,
+    borderRadius: 16,
+    overflow: 'hidden',
+    borderWidth: 1,
+  },
+  mapFallbackCenter: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 12,
   },
   primaryBtnText: {
     color: '#ffffff',

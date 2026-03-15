@@ -10,9 +10,10 @@ type Props = {
   sharing: boolean;
   errorMessage?: string;
 
+  liveCoords?: { latitude: number; longitude: number } | null;
+
   onRefresh: () => void;
   onToggleAvailability: () => void;
-  onUpdateLocationOnce: () => void;
   onToggleSharing: () => void;
 
   // registration
@@ -32,9 +33,9 @@ export default function AmbulanceStatusCard(props: Props) {
     status,
     loading,
     sharing,
+    liveCoords,
     onRefresh,
     onToggleAvailability,
-    onUpdateLocationOnce,
     onToggleSharing,
     regNumber,
     regDriverName,
@@ -62,7 +63,7 @@ export default function AmbulanceStatusCard(props: Props) {
           <Text style={[styles.kv, { color: colors.subtext }]}>Ambulance: {status.ambulance_number}</Text>
           <Text style={[styles.kv, { color: colors.subtext }]}>Driver: {status.driver_name} • {status.driver_phone}</Text>
           <Text style={[styles.kv, { color: colors.subtext }]}>
-            Location: {typeof status.current_latitude === 'number' ? status.current_latitude.toFixed(5) : '-'} , {typeof status.current_longitude === 'number' ? status.current_longitude.toFixed(5) : '-'}
+            Location: {typeof liveCoords?.latitude === 'number' ? liveCoords.latitude.toFixed(5) : typeof status.current_latitude === 'number' ? status.current_latitude.toFixed(5) : '-'} , {typeof liveCoords?.longitude === 'number' ? liveCoords.longitude.toFixed(5) : typeof status.current_longitude === 'number' ? status.current_longitude.toFixed(5) : '-'}
           </Text>
           <Text style={[styles.kv, { color: colors.subtext }]}>Available: {status.is_available ? 'Yes' : 'No'}</Text>
 
@@ -73,14 +74,6 @@ export default function AmbulanceStatusCard(props: Props) {
               onPress={onToggleAvailability}
             >
               <Text style={styles.primaryBtnText}>{status.is_available ? 'Set Unavailable' : 'Set Available'}</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.outlineBtn, { borderColor: colors.border }]}
-              activeOpacity={0.85}
-              onPress={onUpdateLocationOnce}
-            >
-              <Text style={[styles.outlineBtnText, { color: colors.subtext }]}>Update location</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
