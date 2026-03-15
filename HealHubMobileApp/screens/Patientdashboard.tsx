@@ -1,5 +1,18 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, StyleSheet, StatusBar, TouchableOpacity, ScrollView, TextInput, Platform, Modal, Pressable } from 'react-native';
+import {
+  View,
+  Text,
+  StyleSheet,
+  StatusBar,
+  TouchableOpacity,
+  ScrollView,
+  TextInput,
+  Platform,
+  Modal,
+  Pressable,
+  ActivityIndicator,
+  RefreshControl,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as FileSystem from 'expo-file-system/legacy';
 import { Ionicons } from '@expo/vector-icons';
@@ -185,6 +198,10 @@ export default function Patientdashboard({
 
   const [medicineClockTick, setMedicineClockTick] = useState(0);
 
+  const [homeLoading, setHomeLoading] = useState(false);
+  const [homeRefreshing, setHomeRefreshing] = useState(false);
+  const [homeLoadError, setHomeLoadError] = useState<string>('');
+
   const [homeMedicines, setHomeMedicines] = useState<Array<{ id: string; name: string; time: string; note: string }>>([]);
   const [todayMedicineReminders, setTodayMedicineReminders] = useState<
     Array<{ id: string; name: string; date: string; time: string; dosage: string; description: string; doctor: string }>
@@ -264,6 +281,58 @@ export default function Patientdashboard({
       recentAppointments: homeRecentAppointments,
     };
   }, [homeMedicines, homeClinics, homeReports, homeRecentAppointments]);
+
+  const viewAllLabel = useMemo(() => {
+    if (language === 'sinhala') return 'සියල්ල බලන්න';
+    if (language === 'tamil') return 'அனைத்தையும் பார்க்க';
+    return 'View all';
+  }, [language]);
+
+  const retryLabel = useMemo(() => {
+    if (language === 'sinhala') return 'නැවත උත්සාහ කරන්න';
+    if (language === 'tamil') return 'மீண்டும் முயற்சி';
+    return 'Retry';
+  }, [language]);
+
+  const loadingHomeLabel = useMemo(() => {
+    if (language === 'sinhala') return 'දත්ත ලබාගැනෙමින්...';
+    if (language === 'tamil') return 'தரவு ஏற்றப்படுகிறது...';
+    return 'Loading...';
+  }, [language]);
+
+  const HomeSectionHeader = ({ title, toTab }: { title: string; toTab: PatientTabKey }) => {
+    return (
+      <View style={styles.sectionHeaderRow}>
+        <Text style={[styles.sectionTitle, { color: colors.text, marginBottom: 0, flex: 1 }]}>{title}</Text>
+        <TouchableOpacity
+          activeOpacity={0.85}
+          onPress={() => setActiveTab(toTab)}
+          style={[styles.smallPill, { borderColor: colors.primary }]}
+          accessibilityRole="button"
+          accessibilityLabel={`${viewAllLabel} ${title}`}
+        >
+          <Text style={[styles.smallPillText, { color: colors.primary }]}>{viewAllLabel}</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  };
+
+  const openReportDetails = (report: MedicalReportRow, titleText: string, subText: string) => {
+    const created = String(report.created_at || '').slice(0, 10) || '';
+    const doctor = report.doctor_name ? `Dr. ${report.doctor_name}` : '';
+    const specialization = report.specialization ? String(report.specialization) : '';
+    const link = report.appointment_id ? `Appt #${String(report.appointment_id)}` : report.clinic_id ? `Clinic #${String(report.clinic_id)}` : '';
+    setReportDetailsCard({
+      title: titleText,
+      created,
+      doctor: doctor || undefined,
+      specialization: specialization || undefined,
+      link: link || undefined,
+      diagnosis: report.diagnosis ? String(report.diagnosis) : undefined,
+      prescription: report.prescription ? String(report.prescription) : undefined,
+      notes: report.notes ? String(report.notes) : undefined,
+    });
+  };
 
   const reconcilePatientAlarmScheduleAsync = async (input: {
     clinics: ClinicRow[];
@@ -612,78 +681,89 @@ export default function Patientdashboard({
 
     async function loadHomeData() {
       if (!accessToken) return;
+      setHomeLoadError('');
+      setHomeLoading(true);
 
       let docMap: Record<number, DoctorRow> = doctorById;
 
-      // Unread notifications count
-      const notifRes = await apiGet<any>('/api/patient/notifications?is_read=false&limit=100', accessToken);
-      if (!cancelled && notifRes.ok) {
-        const rows = Array.isArray(notifRes.data?.data) ? notifRes.data.data : [];
-        setNotificationCount(rows.length);
-      }
-
-      // Doctor list (for mapping id -> name)
-      const docsRes = await apiGet<any>('/api/appointment/doctors');
-      if (!cancelled && docsRes.ok) {
-        const rows: DoctorRow[] = Array.isArray(docsRes.data?.data) ? docsRes.data.data : [];
-        const map: Record<number, DoctorRow> = {};
-        for (const doc of rows) map[doc.doctor_id] = doc;
-        docMap = map;
-        setDoctorById(map);
-      }
-
-      // Dashboard (clinics + appointments)
-      const dashRes = await apiGet<any>('/api/patient/dashboard', accessToken);
       let clinicsForSchedule: ClinicRow[] = [];
-      if (!cancelled && dashRes.ok) {
-        const data = dashRes.data?.data ?? {};
-        const clinics: ClinicRow[] = Array.isArray(data.clinics) ? data.clinics : [];
-        const appts: AppointmentRow[] = Array.isArray(data.appointments) ? data.appointments : [];
 
-        clinicsForSchedule = clinics;
+      try {
+        // Unread notifications count
+        const notifRes = await apiGet<any>('/api/patient/notifications?is_read=false&limit=100', accessToken);
+        if (!cancelled && notifRes.ok) {
+          const rows = Array.isArray(notifRes.data?.data) ? notifRes.data.data : [];
+          setNotificationCount(rows.length);
+        }
 
-        const clinicMap: Record<string, ClinicRow> = {};
-        for (const c of clinics) clinicMap[String(c.clinic_id)] = c;
-        setClinicById(clinicMap);
+        // Doctor list (for mapping id -> name)
+        const docsRes = await apiGet<any>('/api/appointment/doctors');
+        if (!cancelled && docsRes.ok) {
+          const rows: DoctorRow[] = Array.isArray(docsRes.data?.data) ? docsRes.data.data : [];
+          const map: Record<number, DoctorRow> = {};
+          for (const doc of rows) map[doc.doctor_id] = doc;
+          docMap = map;
+          setDoctorById(map);
+        }
 
-        const scheduledClinics = clinics
-          .filter((c) => String(c.status || '').toLowerCase() === 'scheduled')
-          .sort((a, b) => {
-            const da = String(a.clinic_date || '');
-            const db = String(b.clinic_date || '');
-            if (da !== db) return da.localeCompare(db);
-            return String(a.start_time || '').localeCompare(String(b.start_time || ''));
-          });
-        setClinicList(scheduledClinics);
+        // Dashboard (clinics + appointments)
+        const dashRes = await apiGet<any>('/api/patient/dashboard', accessToken);
+        if (!cancelled && dashRes.ok) {
+          const data = dashRes.data?.data ?? {};
+          const clinics: ClinicRow[] = Array.isArray(data.clinics) ? data.clinics : [];
+          const appts: AppointmentRow[] = Array.isArray(data.appointments) ? data.appointments : [];
 
-        const clinicItems = scheduledClinics
-          .slice(0, 6)
-          .map((c) => {
-            const doc = docMap[c.doctor_id];
-            const doctorName = doc?.full_name ? `Dr. ${doc.full_name}` : `Doctor #${c.doctor_id}`;
-            return {
-              id: String(c.clinic_id),
-              title: doctorName,
-              when: `${c.clinic_date} • ${String(c.start_time || '').slice(0, 5)}`,
-              where: '',
-            };
-          });
-        setHomeClinics(clinicItems);
+          clinicsForSchedule = clinics;
 
-        const apptItems = appts
-          .slice(0, 6)
-          .map((a) => {
-            const doc = docMap[a.doctor_id];
-            const doctorName = doc?.full_name ? `Dr. ${doc.full_name}` : `Doctor #${a.doctor_id}`;
-            return {
-              id: String(a.appointment_id),
-              doctor: doctorName,
-              date: String(a.appointment_date),
-              time: String(a.appointment_time).slice(0, 5),
-              status: String(a.status),
-            };
-          });
-        setHomeRecentAppointments(apptItems);
+          const clinicMap: Record<string, ClinicRow> = {};
+          for (const c of clinics) clinicMap[String(c.clinic_id)] = c;
+          setClinicById(clinicMap);
+
+          const scheduledClinics = clinics
+            .filter((c) => String(c.status || '').toLowerCase() === 'scheduled')
+            .sort((a, b) => {
+              const da = String(a.clinic_date || '');
+              const db = String(b.clinic_date || '');
+              if (da !== db) return da.localeCompare(db);
+              return String(a.start_time || '').localeCompare(String(b.start_time || ''));
+            });
+          setClinicList(scheduledClinics);
+
+          const clinicItems = scheduledClinics
+            .slice(0, 6)
+            .map((c) => {
+              const doc = docMap[c.doctor_id];
+              const doctorName = doc?.full_name ? `Dr. ${doc.full_name}` : `Doctor #${c.doctor_id}`;
+              return {
+                id: String(c.clinic_id),
+                title: doctorName,
+                when: `${c.clinic_date} • ${String(c.start_time || '').slice(0, 5)}`,
+                where: '',
+              };
+            });
+          setHomeClinics(clinicItems);
+
+          const apptItems = appts
+            .slice(0, 6)
+            .map((a) => {
+              const doc = docMap[a.doctor_id];
+              const doctorName = doc?.full_name ? `Dr. ${doc.full_name}` : `Doctor #${a.doctor_id}`;
+              return {
+                id: String(a.appointment_id),
+                doctor: doctorName,
+                date: String(a.appointment_date),
+                time: String(a.appointment_time).slice(0, 5),
+                status: String(a.status),
+              };
+            });
+          setHomeRecentAppointments(apptItems);
+        } else if (!cancelled) {
+          setHomeLoadError(language === 'sinhala' ? 'මුල් පිටු දත්ත ලබාගැනීමට අසමත් විය.' : language === 'tamil' ? 'முகப்பு தரவை ஏற்ற முடியவில்லை.' : 'Failed to load home data.');
+        }
+      } catch (e) {
+        if (!cancelled) {
+          setHomeLoadError(language === 'sinhala' ? 'මුල් පිටු දත්ත ලබාගැනීමට අසමත් විය.' : language === 'tamil' ? 'முகப்பு தரவை ஏற்ற முடியவில்லை.' : 'Failed to load home data.');
+        }
       }
 
       // Medical reports
@@ -812,14 +892,21 @@ export default function Patientdashboard({
       } catch (e) {
         console.log('Auto scheduling alarms failed:', e);
       }
+
+      if (!cancelled) setHomeLoading(false);
     }
 
     loadHomeData();
     return () => {
       cancelled = true;
+      setHomeLoading(false);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [accessToken, realtimeHomeTick]);
+
+  useEffect(() => {
+    if (!homeLoading && homeRefreshing) setHomeRefreshing(false);
+  }, [homeLoading, homeRefreshing]);
 
   useEffect(() => {
     if (!accessToken) return;
@@ -1500,13 +1587,58 @@ export default function Patientdashboard({
           <ScrollView
             showsVerticalScrollIndicator={false}
             contentContainerStyle={styles.scrollContent}
+            refreshControl={
+              <RefreshControl
+                refreshing={homeRefreshing}
+                onRefresh={() => {
+                  if (!accessToken) return;
+                  setHomeRefreshing(true);
+                  setHomeLoadError('');
+                  setRealtimeHomeTick((x) => x + 1);
+                  setRealtimeAmbulanceTick((x) => x + 1);
+                }}
+                tintColor={colors.primary}
+                colors={[colors.primary]}
+              />
+            }
           >
+            {homeLoading && (
+              <View style={[styles.sectionCard, { backgroundColor: colors.card, borderColor: colors.border, flexDirection: 'row', alignItems: 'center', gap: 10 }]}>
+                <ActivityIndicator size="small" color={colors.primary} />
+                <Text style={[styles.cardText, { color: colors.subtext }]}>{loadingHomeLabel}</Text>
+              </View>
+            )}
+
+            {!!homeLoadError && (
+              <View style={[styles.sectionCard, { backgroundColor: colors.card, borderColor: colors.border }] }>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                  <Ionicons name="warning-outline" size={18} color={colors.danger} />
+                  <Text style={[styles.cardText, { color: colors.text, flex: 1 }]}>{homeLoadError}</Text>
+                  <TouchableOpacity
+                    activeOpacity={0.85}
+                    onPress={() => {
+                      if (!accessToken) return;
+                      setHomeRefreshing(true);
+                      setHomeLoadError('');
+                      setRealtimeHomeTick((x) => x + 1);
+                      setRealtimeAmbulanceTick((x) => x + 1);
+                    }}
+                    style={[styles.smallPill, { borderColor: colors.primary }]}
+                    accessibilityRole="button"
+                    accessibilityLabel={retryLabel}
+                  >
+                    <Text style={[styles.smallPillText, { color: colors.primary }]}>{retryLabel}</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
+
             <View
               style={[
                 styles.emergencyCard,
                 {
-                  backgroundColor: mode === 'dark' ? '#2b1d1f' : '#fee2e2',
-                  borderColor: colors.border,
+                  backgroundColor: colors.card,
+                  borderColor: colors.danger,
                 },
               ]}
             >
@@ -1565,19 +1697,20 @@ export default function Patientdashboard({
               style={[
                 styles.aiCard,
                 {
-                  backgroundColor: mode === 'dark' ? '#123527' : colors.primary,
+                  backgroundColor: colors.card,
+                  borderColor: colors.border,
                 },
               ]}
             >
               <View style={{ flex: 1 }}>
-                <Text style={styles.aiTitle}>
+                <Text style={[styles.aiTitle, { color: colors.text }]}>
                   {language === 'sinhala'
                     ? 'AI තුවාල/රෑෂ් හඳුනාගැනීම'
                     : language === 'tamil'
                       ? 'AI காயம்/ரேஷ் கண்டறிதல்'
                       : 'AI Wound / Rash Detector'}
                 </Text>
-                <Text style={styles.aiSub}>
+                <Text style={[styles.aiSub, { color: colors.subtext }]}>
                   {language === 'sinhala'
                     ? 'ඡායාරූපයක් ගෙන හෝ උඩුගත කර ප්‍රතිඵල බලන්න'
                     : language === 'tamil'
@@ -1599,9 +1732,10 @@ export default function Patientdashboard({
             </View>
 
             <View style={[styles.sectionCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-              <Text style={[styles.sectionTitle, { color: colors.text }]}>
-                {language === 'sinhala' ? 'ඉදිරි ඖෂධ' : language === 'tamil' ? 'வரவிருக்கும் மருந்துகள்' : 'Upcoming medicines'}
-              </Text>
+              <HomeSectionHeader
+                title={language === 'sinhala' ? 'ඉදිරි ඖෂධ' : language === 'tamil' ? 'வரவிருக்கும் மருந்துகள்' : 'Upcoming medicines'}
+                toTab="medicine"
+              />
 
               {homeSections.medicines.map((m) => (
                 <View key={m.id} style={[styles.itemRow, { borderTopColor: colors.border }]}>
@@ -1625,9 +1759,10 @@ export default function Patientdashboard({
             </View>
 
             <View style={[styles.sectionCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-              <Text style={[styles.sectionTitle, { color: colors.text }]}>
-                {language === 'sinhala' ? 'ඉදිරි ක්ලිනික්' : language === 'tamil' ? 'வரவிருக்கும் கிளினிக்குகள்' : 'Upcoming clinics'}
-              </Text>
+              <HomeSectionHeader
+                title={language === 'sinhala' ? 'ඉදිරි ක්ලිනික්' : language === 'tamil' ? 'வரவிருக்கும் கிளினிக்குகள்' : 'Upcoming clinics'}
+                toTab="clinic"
+              />
 
               {homeSections.clinics.map((c) => (
                 <View key={c.id} style={[styles.itemRow, { borderTopColor: colors.border }]}>
@@ -1681,9 +1816,10 @@ export default function Patientdashboard({
             </View>
 
             <View style={[styles.sectionCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-              <Text style={[styles.sectionTitle, { color: colors.text }]}>
-                {language === 'sinhala' ? 'වෛද්‍ය වාර්තා' : language === 'tamil' ? 'மருத்துவ அறிக்கைகள்' : 'Medical reports'}
-              </Text>
+              <HomeSectionHeader
+                title={language === 'sinhala' ? 'වෛද්‍ය වාර්තා' : language === 'tamil' ? 'மருத்துவ அறிக்கைகள்' : 'Medical reports'}
+                toTab="reports"
+              />
 
               {homeSections.reports.map((r) => (
                 <View key={r.id} style={[styles.itemRow, { borderTopColor: colors.border, alignItems: 'center' }]}>
@@ -1697,12 +1833,12 @@ export default function Patientdashboard({
                   </View>
                   <TouchableOpacity
                     activeOpacity={0.85}
-                    onPress={() => void downloadReportAsTextAsync(r.report)}
+                    onPress={() => openReportDetails(r.report, r.title, r.sub)}
                     accessibilityRole="button"
-                    accessibilityLabel="Download report"
+                    accessibilityLabel="View report"
                   >
                     <Text style={[styles.itemRight, { color: colors.primary }]}>
-                      {language === 'sinhala' ? 'බාගත' : language === 'tamil' ? 'பதிவிறக்கு' : 'Download'}
+                      {language === 'sinhala' ? 'බලන්න' : language === 'tamil' ? 'பார்' : 'View'}
                     </Text>
                   </TouchableOpacity>
                 </View>
@@ -1720,9 +1856,10 @@ export default function Patientdashboard({
             </View>
 
             <View style={[styles.sectionCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-              <Text style={[styles.sectionTitle, { color: colors.text }]}>
-                {language === 'sinhala' ? 'මෑත වෙන්කිරීම්' : language === 'tamil' ? 'சமீபத்திய நியமனங்கள்' : 'Recent appointments'}
-              </Text>
+              <HomeSectionHeader
+                title={language === 'sinhala' ? 'මෑත වෙන්කිරීම්' : language === 'tamil' ? 'சமீபத்திய நியமனங்கள்' : 'Recent appointments'}
+                toTab="appointment"
+              />
 
               {homeSections.recentAppointments.map((a) => (
                 <View key={a.id} style={[styles.itemRow, { borderTopColor: colors.border }]}>
@@ -2663,6 +2800,13 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     marginBottom: 10,
   },
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+    marginBottom: 10,
+  },
   itemRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -2689,9 +2833,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
+    borderWidth: 1,
   },
   aiTitle: {
-    color: '#ffffff',
     fontSize: 15,
     fontWeight: '900',
     marginBottom: 4,
@@ -2720,7 +2864,6 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   aiSub: {
-    color: '#e5e7eb',
     fontSize: 12,
     fontWeight: '700',
     lineHeight: 16,
