@@ -671,9 +671,21 @@ export default function Patientdashboard({
             onShowMedicineDetails={(details) => setMedicineDetailsCard(details)}
           />
         ) : activeTab === 'clinic' ? (
-          <ClinicTab language={language} colors={colors} clinicList={clinicList} doctorById={doctorById} onShowClinicDetails={setClinicDetailsCard} />
+          <ClinicTab
+            language={language}
+            colors={colors}
+            clinicList={clinicList}
+            doctorById={doctorById}
+            onShowClinicDetails={setClinicDetailsCard}
+          />
         ) : activeTab === 'reports' ? (
-          <ReportsTab language={language} colors={colors} patientReports={patientReports} onOpenReportDetails={openReportDetails} onDownloadReportPdf={handleDownloadReportPdf} />
+          <ReportsTab
+            language={language}
+            colors={colors}
+            patientReports={patientReports}
+            onOpenReportDetails={openReportDetails}
+            onDownloadReportPdf={handleDownloadReportPdf}
+          />
         ) : (
           <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
             {profileView === 'verify-email' ? (

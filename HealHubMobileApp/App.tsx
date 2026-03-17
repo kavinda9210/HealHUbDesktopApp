@@ -456,6 +456,11 @@ function ForceNativeSplashApp() {
     return (
       <Notifications
         accessToken={accessToken}
+        activeTab="home"
+        onSelectTab={(tab) => {
+          setPendingPatientTab(tab);
+          setScreen('patient-dashboard');
+        }}
         onBack={() => setScreen('patient-dashboard')}
         onOpenNotificationType={(type) => {
           const t = String(type || '').trim().toLowerCase();

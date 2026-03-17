@@ -5,6 +5,7 @@ import { useLanguage } from '../context/LanguageContext';
 import NotificationList, { NotificationItem } from '../components/notifications/NotificationList';
 import { useTheme } from '../context/ThemeContext';
 import { apiGet, apiPost } from '../utils/api';
+import PatientTabs, { type PatientTabKey } from '../components/patient/tabs';
 
 type PatientNotification = {
   notification_id: number;
@@ -19,9 +20,12 @@ type NotificationsProps = {
   accessToken?: string;
   onBack?: () => void;
   onOpenNotificationType?: (type: string) => void;
+
+  activeTab?: PatientTabKey;
+  onSelectTab?: (tab: PatientTabKey) => void;
 };
 
-export default function Notifications({ accessToken, onBack, onOpenNotificationType }: NotificationsProps) {
+export default function Notifications({ accessToken, onBack, onOpenNotificationType, activeTab = 'home', onSelectTab }: NotificationsProps) {
   const { language } = useLanguage();
   const { colors, mode } = useTheme();
 
@@ -101,7 +105,7 @@ export default function Notifications({ accessToken, onBack, onOpenNotificationT
 
       <ScrollView
         style={[styles.content, { backgroundColor: colors.background }]}
-        contentContainerStyle={{ paddingBottom: 20 }}
+        contentContainerStyle={{ paddingBottom: 120 }}
         showsVerticalScrollIndicator={false}
       >
         {!!loadError && (
@@ -154,6 +158,13 @@ export default function Notifications({ accessToken, onBack, onOpenNotificationT
           emptyText={language === 'sinhala' ? 'දැනුම්දීම් නැත' : language === 'tamil' ? 'அறிவிப்புகள் இல்லை' : 'No notifications'}
         />
       </ScrollView>
+
+      <PatientTabs
+        activeTab={activeTab}
+        onChange={(tab) => {
+          onSelectTab?.(tab);
+        }}
+      />
     </SafeAreaView>
   );
 }
