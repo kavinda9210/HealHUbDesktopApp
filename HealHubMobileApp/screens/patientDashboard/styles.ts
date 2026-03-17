@@ -1,0 +1,291 @@
+import { StyleSheet } from 'react-native';
+
+export const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
+  header: {
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 14,
+    borderBottomWidth: 1,
+  },
+  headerTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  title: {
+    fontSize: 20,
+    fontWeight: '800',
+  },
+  bellWrap: {
+    position: 'relative',
+    paddingHorizontal: 6,
+    paddingVertical: 4,
+  },
+  bellIcon: {
+    fontSize: 20,
+  },
+  badge: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 5,
+    borderWidth: 2,
+  },
+  badgeText: {
+    color: '#ffffff',
+    fontSize: 11,
+    fontWeight: '900',
+    marginTop: -1,
+  },
+  logoutText: {
+    fontWeight: '900',
+    fontSize: 14,
+  },
+  profileText: {
+    fontWeight: '900',
+    fontSize: 14,
+  },
+  subtitle: {
+    marginTop: 6,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  content: {
+    flex: 1,
+    paddingHorizontal: 20,
+    paddingTop: 16,
+  },
+  scrollContent: {
+    paddingBottom: 20,
+    gap: 14,
+  },
+  emergencyCard: {
+    borderRadius: 18,
+    padding: 16,
+    borderWidth: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  emergencyTitle: {
+    fontSize: 15,
+    fontWeight: '900',
+    marginBottom: 4,
+  },
+  emergencySub: {
+    fontSize: 12,
+    fontWeight: '700',
+    lineHeight: 16,
+  },
+  emergencyBtn: {
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  emergencyBtnText: {
+    color: '#ffffff',
+    fontWeight: '900',
+    fontSize: 12,
+  },
+  fieldLabel: {
+    marginTop: 12,
+    marginBottom: 8,
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  pillsWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    marginBottom: 6,
+  },
+  pillChip: {
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  pillChipText: {
+    fontSize: 13,
+    fontWeight: '900',
+  },
+  pillChipSub: {
+    marginTop: 2,
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  input: {
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  inputMultiline: {
+    minHeight: 90,
+    textAlignVertical: 'top',
+  },
+  pickerBtn: {
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  pickerBtnText: {
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  primaryAction: {
+    marginTop: 14,
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  primaryActionText: {
+    color: '#ffffff',
+    fontSize: 13,
+    fontWeight: '900',
+  },
+  noteText: {
+    marginTop: 10,
+    fontSize: 12,
+    fontWeight: '700',
+    lineHeight: 16,
+  },
+  smallPill: {
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  smallPillText: {
+    fontSize: 12,
+    fontWeight: '900',
+  },
+  card: {
+    borderRadius: 18,
+    padding: 18,
+    borderWidth: 1,
+  },
+  sectionCard: {
+    borderRadius: 18,
+    padding: 16,
+    borderWidth: 1,
+  },
+  sectionTitle: {
+    fontSize: 15,
+    fontWeight: '900',
+    marginBottom: 10,
+  },
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+    marginBottom: 10,
+  },
+  itemRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 10,
+    borderTopWidth: 1,
+  },
+  itemTitle: {
+    fontSize: 13,
+    fontWeight: '900',
+  },
+  itemSub: {
+    marginTop: 3,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  itemRight: {
+    fontSize: 12,
+    fontWeight: '900',
+  },
+  aiCard: {
+    borderRadius: 18,
+    padding: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    borderWidth: 1,
+  },
+  aiTitle: {
+    fontSize: 15,
+    fontWeight: '900',
+    marginBottom: 4,
+  },
+  modalWrap: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 18,
+  },
+  modalCard: {
+    width: '100%',
+    maxWidth: 520,
+    borderRadius: 18,
+    padding: 16,
+    borderWidth: 1,
+    shadowOpacity: 0.35,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 10 },
+    elevation: 14,
+  },
+  modalHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  aiSub: {
+    fontSize: 12,
+    fontWeight: '700',
+    lineHeight: 16,
+  },
+  aiButton: {
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 12,
+  },
+  aiButtonText: {
+    fontWeight: '900',
+    fontSize: 12,
+  },
+  cardTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    marginBottom: 8,
+  },
+  cardText: {
+    fontSize: 13,
+    fontWeight: '600',
+    lineHeight: 18,
+  },
+  profileLogoutBtn: {
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  profileLogoutText: {
+    fontSize: 13,
+    fontWeight: '900',
+  },
+});
