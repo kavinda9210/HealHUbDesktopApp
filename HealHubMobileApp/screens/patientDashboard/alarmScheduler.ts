@@ -8,6 +8,7 @@ import {
   scheduleAlarmBurstAtAsync,
   scheduleMissedReminderAtAsync,
 } from '../../utils/alarms';
+import { Platform } from 'react-native';
 import { getAlarmSoundConfig, getSelectedAlarmToneId } from '../../utils/alarmTones';
 import { kvGet, kvSet } from '../../utils/kvStorage';
 import type { ClinicRow, DoctorRow } from './types';
@@ -24,6 +25,15 @@ export async function reconcilePatientAlarmScheduleAsync(input: {
   try {
     const desired: Array<{ key: string; title: string; body: string; date: Date; data?: any }> = [];
     const now = Date.now();
+
+    // Call-like ringing settings.
+    const ringEverySeconds = 6;
+    const ringCount = 10;
+
+    // Android has a hard per-UID limit on scheduled alarms (often 500).
+    // Our burst approach schedules (ringCount) alarms + 1 missed reminder per item.
+    // Keep a safety buffer so other parts of the app / system have room.
+    const ANDROID_ALARM_BUDGET = 450;
 
     // If a reminder is added very close to its time (or slightly after),
     // still try to ring instead of skipping scheduling entirely.
@@ -94,7 +104,33 @@ export async function reconcilePatientAlarmScheduleAsync(input: {
     }
 
     desired.sort((a, b) => a.date.getTime() - b.date.getTime());
-    const limited = desired.slice(0, 50);
+
+    // Limit scheduling to avoid exceeding Android's alarm limit.
+    const limited: Array<{ key: string; title: string; body: string; date: Date; data?: any }> = [];
+    if (Platform.OS === 'android') {
+      let used = 0;
+      let warned = false;
+      for (const d of desired) {
+        const isMedicine = String(d.key).startsWith('med:');
+        const isClinic = String(d.key).startsWith('clinic:');
+        const cost = isMedicine || isClinic ? ringCount + 1 : 1;
+        if (used + cost > ANDROID_ALARM_BUDGET) {
+          if (!warned) {
+            warned = true;
+            console.log(
+              `reconcilePatientAlarmScheduleAsync: skipping additional alarms to stay under Android alarm budget (${ANDROID_ALARM_BUDGET}).`,
+            );
+          }
+          continue;
+        }
+        limited.push(d);
+        used += cost;
+      }
+    } else {
+      // iOS doesn't have the same AlarmManager limit; still keep a reasonable cap.
+      limited.push(...desired.slice(0, 50));
+    }
+
     const desiredKeys = new Set(limited.map((d) => d.key));
 
     const storedRaw = await kvGet(STORAGE_KEY);
@@ -136,9 +172,7 @@ export async function reconcilePatientAlarmScheduleAsync(input: {
         const sound = isMedicine ? medicineSound : isClinic ? clinicSound : undefined;
 
         if (isMedicine || isClinic) {
-          // Call-like: ring (sound/vibration) 10 times in a row, but keep only ONE visible notification.
-          const ringEverySeconds = 6;
-          const ringCount = 10;
+          // Call-like: ring (sound/vibration) multiple times, but keep only ONE visible notification.
 
           const categoryId = isMedicine ? MEDICINE_ALARM_CATEGORY_ID : CLINIC_ALARM_CATEGORY_ID;
           const missedCategoryId = isMedicine ? MEDICINE_MISSED_CATEGORY_ID : CLINIC_MISSED_CATEGORY_ID;
