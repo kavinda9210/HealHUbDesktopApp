@@ -7,17 +7,30 @@ import {
   type AlarmToneTarget,
   getAlarmToneById,
   getSelectedAlarmToneId,
+  getAlarmSoundConfig,
   listAlarmTones,
   setSelectedAlarmToneId,
 } from '../../utils/alarmTones';
+import { kvGet, kvSet } from '../../utils/kvStorage';
+import {
+  cancelScheduledAlarmsByKeyAsync,
+  MEDICINE_ALARM_CATEGORY_ID,
+  MEDICINE_MISSED_CATEGORY_ID,
+  scheduleAlarmBurstAtAsync,
+  scheduleMissedReminderAtAsync,
+} from '../../utils/alarms';
 
 export default function AlarmToneSettingsCard() {
   const { colors } = useTheme();
   const { language } = useLanguage();
 
+  const VIBRATE_ONLY_KEY = 'alarm_vibration_only_v1';
+
   const [medicineToneId, setMedicineToneId] = useState<AlarmToneId>('ringtone_cabinet');
   const [clinicToneId, setClinicToneId] = useState<AlarmToneId>('ringtone_classic');
   const [expanded, setExpanded] = useState<AlarmToneTarget | null>(null);
+
+  const [vibrationOnly, setVibrationOnly] = useState<boolean>(false);
 
   const [playing, setPlaying] = useState<AlarmToneId | null>(null);
   const soundRef = useRef<any>(null);
@@ -68,14 +81,131 @@ export default function AlarmToneSettingsCard() {
     return 'Selected';
   }, [language]);
 
+  const ringingModeTitle = useMemo(() => {
+    if (language === 'sinhala') return 'රින්ගින් මෝඩ්';
+    if (language === 'tamil') return 'ரிங் மோடு';
+    return 'Ringing mode';
+  }, [language]);
+
+  const soundAndVibrateLabel = useMemo(() => {
+    if (language === 'sinhala') return 'ශබ්ද + කම්පන';
+    if (language === 'tamil') return 'ஒலி + அதிர்வு';
+    return 'Sound + vibration';
+  }, [language]);
+
+  const vibrateOnlyLabel = useMemo(() => {
+    if (language === 'sinhala') return 'කම්පනය පමණයි';
+    if (language === 'tamil') return 'அதிர்வு மட்டும்';
+    return 'Vibration only';
+  }, [language]);
+
+  const setVibrationOnlyAsync = async (next: boolean) => {
+    setVibrationOnly(next);
+    try {
+      await kvSet(VIBRATE_ONLY_KEY, next ? '1' : '0');
+    } catch {
+      // best-effort
+    }
+
+    // Best-effort: cancel existing scheduled medicine/clinic bursts so the next dashboard refresh
+    // re-schedules them with the new ringing mode.
+    try {
+      const SCHEDULE_KEY = 'patient_alarm_schedule_v2';
+      const raw = await kvGet(SCHEDULE_KEY);
+      if (!raw) return;
+      const list = JSON.parse(raw) as string[];
+      if (!Array.isArray(list) || list.length === 0) return;
+
+      const keep: string[] = [];
+      const rescheduleKeys: string[] = [];
+      for (const k of list) {
+        const key = String(k || '');
+        if (key.startsWith('med:') || key.startsWith('clinic:')) rescheduleKeys.push(key);
+        else keep.push(key);
+      }
+
+      for (const k of rescheduleKeys) {
+        try {
+          // eslint-disable-next-line no-await-in-loop
+          await cancelScheduledAlarmsByKeyAsync(k);
+        } catch {
+          // ignore
+        }
+      }
+
+      await kvSet(SCHEDULE_KEY, JSON.stringify(keep));
+    } catch {
+      // ignore
+    }
+  };
+
+  const testRingingLabel = useMemo(() => {
+    if (language === 'sinhala') return 'ටෙස්ට් රින්ග් (10 වතාවක්)';
+    if (language === 'tamil') return 'டெஸ்ட் ரிங் (10 முறை)';
+    return 'Test ringing (10x)';
+  }, [language]);
+
+  const testNoteLabel = useMemo(() => {
+    if (language === 'sinhala') return 'මෙය DEV පරිසරය සඳහා පමණයි. තත්පර 10කින් රින්ග් වීමට සැකසෙයි.';
+    if (language === 'tamil') return 'இது DEV பயன்பாட்டிற்கு மட்டும். 10 விநாடிகளில் ரிங் தொடங்கும்.';
+    return 'DEV only. Schedules a ring in 10 seconds.';
+  }, [language]);
+
+  const scheduleDevTestRingAsync = async () => {
+    const alarmKey = `devtest:medicine:${Date.now()}`;
+    const ringEverySeconds = 6;
+    const ringCount = 10;
+    const startAt = new Date(Date.now() + 10_000);
+
+    try {
+      await cancelScheduledAlarmsByKeyAsync(alarmKey);
+    } catch {
+      // ignore
+    }
+
+    const sound = vibrationOnly ? undefined : getAlarmSoundConfig(medicineToneId);
+    const baseData = {
+      alarmKey,
+      type: 'medicine',
+      reminderId: 999999,
+      medicineName: 'Test medicine',
+      dosage: '1 tab',
+      reminderDate: '',
+      reminderTime: '',
+      vibrateOnly: vibrationOnly,
+    };
+
+    await scheduleAlarmBurstAtAsync({
+      title: 'Medicine reminder',
+      body: 'Test medicine • ringing…',
+      date: startAt,
+      burstEverySeconds: ringEverySeconds,
+      burstCount: ringCount,
+      dataBuilder: (index) => ({ ...baseData, hideFromList: index > 0 }),
+      ...(sound ? { sound } : {}),
+      categoryId: MEDICINE_ALARM_CATEGORY_ID,
+    });
+
+    const missedAt = new Date(startAt.getTime() + ringCount * ringEverySeconds * 1000);
+    await scheduleMissedReminderAtAsync({
+      title: 'Missed call • Medicine',
+      body: 'Test medicine • missed',
+      date: missedAt,
+      data: { ...baseData, missed: true },
+      categoryId: MEDICINE_MISSED_CATEGORY_ID,
+    });
+  };
+
   useEffect(() => {
     let mounted = true;
     (async () => {
       const med = await getSelectedAlarmToneId('medicine');
       const cli = await getSelectedAlarmToneId('clinic');
+      const v = await kvGet(VIBRATE_ONLY_KEY);
       if (!mounted) return;
       setMedicineToneId(med);
       setClinicToneId(cli);
+      setVibrationOnly(v === '1' || String(v || '').toLowerCase() === 'true');
     })().catch(() => {
       // best-effort
     });
@@ -273,6 +403,62 @@ export default function AlarmToneSettingsCard() {
     <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
       <Text style={[styles.title, { color: colors.text }]}>{title}</Text>
 
+      <View style={[styles.modeCard, { borderColor: colors.border }]}> 
+        <Text style={[styles.modeTitle, { color: colors.text }]}>{ringingModeTitle}</Text>
+        <View style={styles.modeRow}>
+          <TouchableOpacity
+            activeOpacity={0.85}
+            onPress={() => void setVibrationOnlyAsync(false)}
+            style={[
+              styles.modeOption,
+              {
+                borderColor: !vibrationOnly ? colors.primary : colors.border,
+                backgroundColor: !vibrationOnly ? (colors.background === '#ffffff' ? '#f0f9ff' : '#0b2a22') : 'transparent',
+              },
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel={soundAndVibrateLabel}
+          >
+            <Text style={[styles.modeOptionText, { color: !vibrationOnly ? colors.primary : colors.subtext }]}>
+              {soundAndVibrateLabel}
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            activeOpacity={0.85}
+            onPress={() => void setVibrationOnlyAsync(true)}
+            style={[
+              styles.modeOption,
+              {
+                borderColor: vibrationOnly ? colors.primary : colors.border,
+                backgroundColor: vibrationOnly ? (colors.background === '#ffffff' ? '#f0f9ff' : '#0b2a22') : 'transparent',
+              },
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel={vibrateOnlyLabel}
+          >
+            <Text style={[styles.modeOptionText, { color: vibrationOnly ? colors.primary : colors.subtext }]}>
+              {vibrateOnlyLabel}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      {__DEV__ && (
+        <View style={[styles.testCard, { borderColor: colors.border }]}> 
+          <Text style={[styles.testNote, { color: colors.subtext }]}>{testNoteLabel}</Text>
+          <TouchableOpacity
+            activeOpacity={0.85}
+            onPress={() => void scheduleDevTestRingAsync()}
+            style={[styles.testBtn, { borderColor: colors.primary }]}
+            accessibilityRole="button"
+            accessibilityLabel={testRingingLabel}
+          >
+            <Text style={[styles.testBtnText, { color: colors.primary }]}>{testRingingLabel}</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
       <TouchableOpacity
         activeOpacity={0.85}
         onPress={() => setExpanded((v) => (v === 'medicine' ? null : 'medicine'))}
@@ -330,6 +516,57 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '900',
     marginBottom: 12,
+  },
+  modeCard: {
+    borderWidth: 1,
+    borderRadius: 14,
+    padding: 12,
+    marginBottom: 12,
+  },
+  modeTitle: {
+    fontSize: 13,
+    fontWeight: '900',
+    marginBottom: 10,
+  },
+  modeRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  modeOption: {
+    flex: 1,
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingVertical: 10,
+    paddingHorizontal: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modeOptionText: {
+    fontSize: 12,
+    fontWeight: '900',
+  },
+  testCard: {
+    borderWidth: 1,
+    borderRadius: 14,
+    padding: 12,
+    marginBottom: 12,
+    gap: 10,
+  },
+  testNote: {
+    fontSize: 12,
+    fontWeight: '700',
+    lineHeight: 16,
+  },
+  testBtn: {
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingVertical: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  testBtnText: {
+    fontSize: 12,
+    fontWeight: '900',
   },
   selectorRow: {
     borderWidth: 1,

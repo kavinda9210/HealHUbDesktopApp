@@ -27,14 +27,27 @@ export type AlarmSoundConfig = {
 };
 
 const ALARM_CHANNEL_PREFIX = 'alarms_v2';
+const VIBRATE_ONLY_CHANNEL_ID = 'alarms_v2_vibrate_only';
 const MISSED_CHANNEL_ID = 'alarms_missed_v1';
 const ALARM_CATEGORY_ID = 'alarm';
+
+export const MEDICINE_ALARM_CATEGORY_ID = 'medicine_alarm';
+export const CLINIC_ALARM_CATEGORY_ID = 'clinic_alarm';
+export const MEDICINE_MISSED_CATEGORY_ID = 'medicine_missed';
+export const CLINIC_MISSED_CATEGORY_ID = 'clinic_missed';
+
 export const STOP_ALARM_ACTION_ID = 'STOP_ALARM';
+export const TAKE_MEDICINE_ACTION_ID = 'TAKE_MEDICINE';
+export const OPEN_CLINIC_ACTION_ID = 'OPEN_CLINIC';
 
 type AlarmData = {
   alarmKey?: string;
   /** If true, do not play sound (used for missed reminders). */
   silent?: boolean;
+  /** If true, do not play sound, but keep vibration enabled (ringing mode: vibration only). */
+  vibrateOnly?: boolean;
+  /** If true, do not show banner/list entry for this notification (used for repeat rings). */
+  hideFromList?: boolean;
   [key: string]: any;
 };
 
@@ -68,6 +81,25 @@ async function ensureAlarmChannelAsync(androidSound: string | null | undefined) 
   });
 }
 
+async function ensureVibrateOnlyChannelAsync() {
+  if (Platform.OS !== 'android') return;
+  const Notifications = await getNotificationsAsync();
+  await Notifications.setNotificationChannelAsync(VIBRATE_ONLY_CHANNEL_ID, {
+    name: 'Alarms (vibration only)',
+    importance: Notifications.AndroidImportance.MAX,
+    sound: null,
+    vibrationPattern: [0, 1200, 600, 1200, 600, 1200, 600, 1200],
+    enableVibrate: true,
+    lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+    bypassDnd: true,
+    showBadge: true,
+    audioAttributes: {
+      usage: Notifications.AndroidAudioUsage.ALARM,
+      contentType: Notifications.AndroidAudioContentType.SONIFICATION,
+    },
+  });
+}
+
 async function ensureMissedChannelAsync() {
   if (Platform.OS !== 'android') return;
   const Notifications = await getNotificationsAsync();
@@ -86,6 +118,14 @@ function isSilentAlarm(data: any): boolean {
   return Boolean(data?.silent);
 }
 
+function isVibrateOnlyAlarm(data: any): boolean {
+  return Boolean(data?.vibrateOnly);
+}
+
+function isHiddenFromList(data: any): boolean {
+  return Boolean(data?.hideFromList);
+}
+
 export async function configureAlarmNotificationsAsync() {
   const Notifications = await getNotificationsAsync();
 
@@ -93,26 +133,43 @@ export async function configureAlarmNotificationsAsync() {
     handleNotification: async (notification) => {
       const data: any = (notification as any)?.request?.content?.data ?? {};
       const silent = isSilentAlarm(data);
+      const vibrateOnly = isVibrateOnlyAlarm(data);
+      const hidden = isHiddenFromList(data);
       return {
-      shouldShowBanner: true,
-      shouldShowList: true,
-      shouldPlaySound: !silent,
-      shouldSetBadge: true,
+        shouldShowBanner: !hidden,
+        shouldShowList: !hidden,
+        shouldPlaySound: !silent && !vibrateOnly,
+        shouldSetBadge: !hidden,
       };
     },
   });
 
   await ensureAlarmChannelAsync('default');
+  await ensureVibrateOnlyChannelAsync();
   await ensureMissedChannelAsync();
 
-  // Action buttons (Stop alarm)
+  // Action buttons (call-like reminders)
   try {
     await Notifications.setNotificationCategoryAsync(ALARM_CATEGORY_ID, [
-      {
-        identifier: STOP_ALARM_ACTION_ID,
-        buttonTitle: 'Stop',
-        options: { opensAppToForeground: false },
-      },
+      { identifier: STOP_ALARM_ACTION_ID, buttonTitle: 'Stop', options: { opensAppToForeground: false } },
+    ]);
+
+    await Notifications.setNotificationCategoryAsync(MEDICINE_ALARM_CATEGORY_ID, [
+      { identifier: TAKE_MEDICINE_ACTION_ID, buttonTitle: 'Take', options: { opensAppToForeground: true } },
+      { identifier: STOP_ALARM_ACTION_ID, buttonTitle: 'Stop', options: { opensAppToForeground: false } },
+    ]);
+
+    await Notifications.setNotificationCategoryAsync(CLINIC_ALARM_CATEGORY_ID, [
+      { identifier: OPEN_CLINIC_ACTION_ID, buttonTitle: 'Open', options: { opensAppToForeground: true } },
+      { identifier: STOP_ALARM_ACTION_ID, buttonTitle: 'Stop', options: { opensAppToForeground: false } },
+    ]);
+
+    await Notifications.setNotificationCategoryAsync(MEDICINE_MISSED_CATEGORY_ID, [
+      { identifier: TAKE_MEDICINE_ACTION_ID, buttonTitle: 'Take', options: { opensAppToForeground: true } },
+    ]);
+
+    await Notifications.setNotificationCategoryAsync(CLINIC_MISSED_CATEGORY_ID, [
+      { identifier: OPEN_CLINIC_ACTION_ID, buttonTitle: 'Open', options: { opensAppToForeground: true } },
     ]);
   } catch (e) {
     // Best-effort (older SDKs / platforms may not support categories)
@@ -133,6 +190,7 @@ export async function scheduleAlarmAtAsync(input: {
   date: Date;
   data?: AlarmData;
   sound?: AlarmSoundConfig;
+  categoryId?: string;
 }): Promise<AlarmScheduleResult> {
   const Notifications = await getNotificationsAsync();
   const perm = await ensureAlarmPermissionAsync();
@@ -141,18 +199,30 @@ export async function scheduleAlarmAtAsync(input: {
   }
 
   const silent = isSilentAlarm(input.data);
-  const iosSound = silent ? null : (input.sound?.iosSound ?? 'default');
-  const androidSound = silent ? null : (input.sound?.androidSound ?? 'default');
+  const vibrateOnly = isVibrateOnlyAlarm(input.data);
+  const iosSound = silent || vibrateOnly ? null : (input.sound?.iosSound ?? 'default');
+  const androidSound = silent || vibrateOnly ? null : (input.sound?.androidSound ?? 'default');
 
   if (Platform.OS === 'android') {
     if (silent) {
       await ensureMissedChannelAsync();
+    } else if (vibrateOnly) {
+      await ensureVibrateOnlyChannelAsync();
     } else {
       await ensureAlarmChannelAsync(androidSound);
     }
   }
 
-  const androidChannelId = Platform.OS === 'android' ? (silent ? MISSED_CHANNEL_ID : makeAlarmChannelId(androidSound)) : undefined;
+  const androidChannelId =
+    Platform.OS === 'android'
+      ? silent
+        ? MISSED_CHANNEL_ID
+        : vibrateOnly
+          ? VIBRATE_ONLY_CHANNEL_ID
+          : makeAlarmChannelId(androidSound)
+      : undefined;
+
+  const categoryIdentifier = input.categoryId ?? ALARM_CATEGORY_ID;
 
   const id = await Notifications.scheduleNotificationAsync({
     content: {
@@ -160,7 +230,7 @@ export async function scheduleAlarmAtAsync(input: {
       body: input.body,
       sound: iosSound as any,
       priority: Notifications.AndroidNotificationPriority.MAX,
-      categoryIdentifier: ALARM_CATEGORY_ID,
+      categoryIdentifier,
       data: input.data ?? {},
       ...(Platform.OS === 'android' ? { channelId: androidChannelId } : {}),
     },
@@ -180,6 +250,7 @@ export async function scheduleAlarmInSecondsAsync(input: {
   seconds: number;
   data?: AlarmData;
   sound?: AlarmSoundConfig;
+  categoryId?: string;
 }): Promise<AlarmScheduleResult> {
   const Notifications = await getNotificationsAsync();
   const perm = await ensureAlarmPermissionAsync();
@@ -188,18 +259,30 @@ export async function scheduleAlarmInSecondsAsync(input: {
   }
 
   const silent = isSilentAlarm(input.data);
-  const iosSound = silent ? null : (input.sound?.iosSound ?? 'default');
-  const androidSound = silent ? null : (input.sound?.androidSound ?? 'default');
+  const vibrateOnly = isVibrateOnlyAlarm(input.data);
+  const iosSound = silent || vibrateOnly ? null : (input.sound?.iosSound ?? 'default');
+  const androidSound = silent || vibrateOnly ? null : (input.sound?.androidSound ?? 'default');
 
   if (Platform.OS === 'android') {
     if (silent) {
       await ensureMissedChannelAsync();
+    } else if (vibrateOnly) {
+      await ensureVibrateOnlyChannelAsync();
     } else {
       await ensureAlarmChannelAsync(androidSound);
     }
   }
 
-  const androidChannelId = Platform.OS === 'android' ? (silent ? MISSED_CHANNEL_ID : makeAlarmChannelId(androidSound)) : undefined;
+  const androidChannelId =
+    Platform.OS === 'android'
+      ? silent
+        ? MISSED_CHANNEL_ID
+        : vibrateOnly
+          ? VIBRATE_ONLY_CHANNEL_ID
+          : makeAlarmChannelId(androidSound)
+      : undefined;
+
+  const categoryIdentifier = input.categoryId ?? ALARM_CATEGORY_ID;
 
   const id = await Notifications.scheduleNotificationAsync({
     content: {
@@ -207,7 +290,7 @@ export async function scheduleAlarmInSecondsAsync(input: {
       body: input.body,
       sound: iosSound as any,
       priority: Notifications.AndroidNotificationPriority.MAX,
-      categoryIdentifier: ALARM_CATEGORY_ID,
+      categoryIdentifier,
       data: input.data ?? {},
       ...(Platform.OS === 'android' ? { channelId: androidChannelId } : {}),
     },
@@ -237,6 +320,7 @@ export async function scheduleCallLikeAlarmBurstAsync(input: {
   repeatCount?: number;
   data?: AlarmData;
   sound?: AlarmSoundConfig;
+  categoryId?: string;
 }): Promise<AlarmBurstScheduleResult> {
   const Notifications = await getNotificationsAsync();
 
@@ -250,18 +334,30 @@ export async function scheduleCallLikeAlarmBurstAsync(input: {
   }
 
   const silent = isSilentAlarm(input.data);
-  const iosSound = silent ? null : (input.sound?.iosSound ?? 'default');
-  const androidSound = silent ? null : (input.sound?.androidSound ?? 'default');
+  const vibrateOnly = isVibrateOnlyAlarm(input.data);
+  const iosSound = silent || vibrateOnly ? null : (input.sound?.iosSound ?? 'default');
+  const androidSound = silent || vibrateOnly ? null : (input.sound?.androidSound ?? 'default');
 
   if (Platform.OS === 'android') {
     if (silent) {
       await ensureMissedChannelAsync();
+    } else if (vibrateOnly) {
+      await ensureVibrateOnlyChannelAsync();
     } else {
       await ensureAlarmChannelAsync(androidSound);
     }
   }
 
-  const androidChannelId = Platform.OS === 'android' ? (silent ? MISSED_CHANNEL_ID : makeAlarmChannelId(androidSound)) : undefined;
+  const androidChannelId =
+    Platform.OS === 'android'
+      ? silent
+        ? MISSED_CHANNEL_ID
+        : vibrateOnly
+          ? VIBRATE_ONLY_CHANNEL_ID
+          : makeAlarmChannelId(androidSound)
+      : undefined;
+
+  const categoryIdentifier = input.categoryId ?? ALARM_CATEGORY_ID;
 
   const now = Date.now();
   const ids: string[] = [];
@@ -274,7 +370,7 @@ export async function scheduleCallLikeAlarmBurstAsync(input: {
         body: input.body,
         sound: iosSound as any,
         priority: Notifications.AndroidNotificationPriority.MAX,
-        categoryIdentifier: ALARM_CATEGORY_ID,
+        categoryIdentifier,
         data: input.data ?? {},
         ...(Platform.OS === 'android' ? { channelId: androidChannelId } : {}),
       },
@@ -295,6 +391,7 @@ export async function scheduleDailyMedicineReminderAsync(input: {
   hour: number;
   minute: number;
   sound?: AlarmSoundConfig;
+  categoryId?: string;
 }): Promise<AlarmScheduleResult> {
   const Notifications = await getNotificationsAsync();
   const perm = await ensureAlarmPermissionAsync();
@@ -310,6 +407,7 @@ export async function scheduleDailyMedicineReminderAsync(input: {
   }
 
   const androidChannelId = Platform.OS === 'android' ? makeAlarmChannelId(androidSound) : undefined;
+  const categoryIdentifier = input.categoryId ?? ALARM_CATEGORY_ID;
 
   const id = await Notifications.scheduleNotificationAsync({
     content: {
@@ -317,7 +415,7 @@ export async function scheduleDailyMedicineReminderAsync(input: {
       body: `${input.medicineName} • ${String(input.hour).padStart(2, '0')}:${String(input.minute).padStart(2, '0')}`,
       sound: iosSound as any,
       priority: Notifications.AndroidNotificationPriority.MAX,
-      categoryIdentifier: ALARM_CATEGORY_ID,
+      categoryIdentifier,
       data: {},
       ...(Platform.OS === 'android' ? { channelId: androidChannelId } : {}),
     },
@@ -339,7 +437,9 @@ export async function scheduleAlarmBurstAtAsync(input: {
   burstEverySeconds?: number;
   burstCount?: number;
   data?: AlarmData;
+  dataBuilder?: (index: number) => AlarmData;
   sound?: AlarmSoundConfig;
+  categoryId?: string;
 }): Promise<AlarmBurstScheduleResult> {
   const Notifications = await getNotificationsAsync();
   const perm = await ensureAlarmPermissionAsync();
@@ -347,36 +447,50 @@ export async function scheduleAlarmBurstAtAsync(input: {
     throw new Error('Notification permission not granted');
   }
 
-  const burstEverySeconds = Math.max(10, Math.round(input.burstEverySeconds ?? 60));
+  const burstEverySeconds = Math.max(3, Math.round(input.burstEverySeconds ?? 60));
   const burstCount = Math.max(1, Math.min(10, Math.round(input.burstCount ?? 4)));
 
-  const silent = isSilentAlarm(input.data);
-  const iosSound = silent ? null : (input.sound?.iosSound ?? 'default');
-  const androidSound = silent ? null : (input.sound?.androidSound ?? 'default');
+  const baseData = input.dataBuilder ? input.dataBuilder(0) : input.data;
+  const silent = isSilentAlarm(baseData);
+  const vibrateOnly = isVibrateOnlyAlarm(baseData);
+  const iosSound = silent || vibrateOnly ? null : (input.sound?.iosSound ?? 'default');
+  const androidSound = silent || vibrateOnly ? null : (input.sound?.androidSound ?? 'default');
 
   if (Platform.OS === 'android') {
     if (silent) {
       await ensureMissedChannelAsync();
+    } else if (vibrateOnly) {
+      await ensureVibrateOnlyChannelAsync();
     } else {
       await ensureAlarmChannelAsync(androidSound);
     }
   }
 
-  const androidChannelId = Platform.OS === 'android' ? (silent ? MISSED_CHANNEL_ID : makeAlarmChannelId(androidSound)) : undefined;
+  const androidChannelId =
+    Platform.OS === 'android'
+      ? silent
+        ? MISSED_CHANNEL_ID
+        : vibrateOnly
+          ? VIBRATE_ONLY_CHANNEL_ID
+          : makeAlarmChannelId(androidSound)
+      : undefined;
+
+  const categoryIdentifier = input.categoryId ?? ALARM_CATEGORY_ID;
 
   const base = input.date.getTime();
   const ids: string[] = [];
 
   for (let i = 0; i < burstCount; i++) {
     const fireAt = base + i * burstEverySeconds * 1000;
+    const data = input.dataBuilder ? input.dataBuilder(i) : (input.data ?? {});
     const id = await Notifications.scheduleNotificationAsync({
       content: {
         title: input.title,
         body: input.body,
         sound: iosSound as any,
         priority: Notifications.AndroidNotificationPriority.MAX,
-        categoryIdentifier: ALARM_CATEGORY_ID,
-        data: input.data ?? {},
+        categoryIdentifier,
+        data,
         ...(Platform.OS === 'android' ? { channelId: androidChannelId } : {}),
       },
       trigger: {
@@ -396,12 +510,14 @@ export async function scheduleMissedReminderAtAsync(input: {
   body: string;
   date: Date;
   data?: AlarmData;
+  categoryId?: string;
 }): Promise<AlarmScheduleResult> {
   return scheduleAlarmAtAsync({
     title: input.title,
     body: input.body,
     date: input.date,
     data: { ...(input.data ?? {}), silent: true },
+    categoryId: input.categoryId,
   });
 }
 

@@ -20,7 +20,13 @@ import Notifications from './screens/Notifications';
 import NearbyAmbulance from './screens/NearbyAmbulance';
 import AmbulanceStaffDashboard from './screens/AmbulanceStaffDashboard';
 import DirectionsMap from './screens/DirectionsMap';
-import { cancelScheduledAlarmsByKeyAsync, configureAlarmNotificationsAsync, STOP_ALARM_ACTION_ID } from './utils/alarms';
+import {
+  cancelScheduledAlarmsByKeyAsync,
+  configureAlarmNotificationsAsync,
+  OPEN_CLINIC_ACTION_ID,
+  STOP_ALARM_ACTION_ID,
+  TAKE_MEDICINE_ACTION_ID,
+} from './utils/alarms';
 import Constants from 'expo-constants';
 import * as ExpoNotifications from 'expo-notifications';
 
@@ -150,7 +156,9 @@ function ForceNativeSplashApp() {
         return;
       }
 
-      if (actionId !== ExpoNotifications.DEFAULT_ACTION_IDENTIFIER) return;
+      const isOpenAction =
+        actionId === ExpoNotifications.DEFAULT_ACTION_IDENTIFIER || actionId === TAKE_MEDICINE_ACTION_ID || actionId === OPEN_CLINIC_ACTION_ID;
+      if (!isOpenAction) return;
 
       const data: any = (response as any)?.notification?.request?.content?.data ?? {};
       const alarmKey = data?.alarmKey ? String(data.alarmKey) : '';
