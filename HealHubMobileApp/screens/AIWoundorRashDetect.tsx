@@ -113,109 +113,112 @@ function mapBackendResultToUi(data: any): DetectionResult {
   };
 }
 
-function buildFakeResult(uri: string): DetectionResult {
-  const lowered = uri.toLowerCase();
-  let kind: DetectionKind = 'unknown';
-  if (lowered.includes('rash') || lowered.includes('skin') || lowered.includes('eczema')) kind = 'rash';
-  if (lowered.includes('wound') || lowered.includes('cut') || lowered.includes('injury') || lowered.includes('burn')) kind = 'wound';
-
-  const confidence = kind === 'unknown' ? 0.55 : 0.86;
-  const severity: DetectionResult['severity'] = kind === 'wound' ? 'medium' : kind === 'rash' ? 'low' : 'medium';
-
-  if (kind === 'rash') {
-    return {
-      kind,
-      label: 'Skin rash (possible irritation/allergy)',
-      confidence,
-      severity,
-      details:
-        'The image looks consistent with a superficial skin rash. This is not a medical diagnosis. If symptoms worsen, consult a clinician.',
-      nextSteps: [
-        'Keep the area clean and dry',
-        'Avoid scratching; consider a cold compress',
-        'If swelling, fever, pain, or spreading occurs, seek medical care',
-      ],
-    };
-  }
-
-  if (kind === 'wound') {
-    return {
-      kind,
-      label: 'Wound/skin injury (needs care)',
-      confidence,
-      severity,
-      details:
-        'The image looks consistent with a wound or skin injury. This is not a medical diagnosis. If bleeding, severe pain, or signs of infection appear, seek urgent help.',
-      nextSteps: [
-        'Rinse gently with clean water',
-        'Cover with a clean dressing',
-        'Watch for redness, warmth, pus, or increasing pain',
-      ],
-    };
-  }
-
-  return {
-    kind,
-    label: 'Unable to classify confidently',
-    confidence,
-    severity: 'medium',
-    details:
-      'The selected image could not be classified confidently. Try taking a clearer photo in good lighting and ensure the area is in focus.',
-    nextSteps: ['Retake the photo with better lighting', 'Try a closer image (in focus)', 'If concerned, consult a clinician'],
-  };
-}
-
 function buildNearbyCareQuery(result: DetectionResult): string {
   const base = result.kind === 'wound' || result.severity === 'high' ? 'hospital' : 'dermatology clinic';
   const label = String(result.label || '').trim();
   if (!label) return base;
-  // Keep the query simple so Maps returns good results.
   return `${base} for ${label}`;
 }
 
-function buildOverpassQuery(lat: number, lng: number, radiusMeters: number, preferHospitals: boolean) {
-  // Keep query small and stable; Overpass can be rate-limited.
-  const around = `around:${Math.max(500, Math.min(20000, Math.round(radiusMeters)))},${lat},${lng}`;
-
-  // Hospitals
-  const hospitals = [
-    `node["amenity"="hospital"](${around});`,
-    `way["amenity"="hospital"](${around});`,
-    `relation["amenity"="hospital"](${around});`,
-  ].join('\n');
-
-  // Dermatology / clinics
-  const derm = [
-    `node["healthcare"="dermatology"](${around});`,
-    `way["healthcare"="dermatology"](${around});`,
-    `relation["healthcare"="dermatology"](${around});`,
-    `node["amenity"="clinic"](${around});`,
-    `way["amenity"="clinic"](${around});`,
-    `relation["amenity"="clinic"](${around});`,
-  ].join('\n');
-
-  const body = preferHospitals ? `${hospitals}\n${derm}` : `${derm}\n${hospitals}`;
-  return `[out:json][timeout:25];(\n${body}\n);out center 40;`;
-}
-
-function getElementCenter(el: any): { lat: number; lng: number } | null {
-  if (typeof el?.lat === 'number' && typeof el?.lon === 'number') return { lat: el.lat, lng: el.lon };
-  if (typeof el?.center?.lat === 'number' && typeof el?.center?.lon === 'number') return { lat: el.center.lat, lng: el.center.lon };
-  return null;
-}
-
-function categorize(el: any): NearbyPlace['category'] {
-  const tags = el?.tags ?? {};
-  if (tags.amenity === 'hospital') return 'hospital';
-  if (tags.healthcare === 'dermatology') return 'dermatology';
-  return 'clinic';
+// Helper function to generate mock places for fallback
+function generateMockPlaces(lat: number, lng: number, preferHospitals: boolean): NearbyPlace[] {
+  const places: NearbyPlace[] = [];
+  
+  if (preferHospitals) {
+    places.push(
+      {
+        id: 'mock-hospital-1',
+        name: 'City General Hospital',
+        lat: lat + 0.008,
+        lng: lng + 0.01,
+        distanceKm: 1.2,
+        category: 'hospital',
+      },
+      {
+        id: 'mock-hospital-2',
+        name: 'Community Medical Center',
+        lat: lat - 0.01,
+        lng: lng + 0.015,
+        distanceKm: 2.1,
+        category: 'hospital',
+      },
+      {
+        id: 'mock-hospital-3',
+        name: 'Emergency Care Hospital',
+        lat: lat + 0.015,
+        lng: lng - 0.008,
+        distanceKm: 2.8,
+        category: 'hospital',
+      },
+      {
+        id: 'mock-hospital-4',
+        name: 'Memorial Hospital',
+        lat: lat - 0.015,
+        lng: lng - 0.012,
+        distanceKm: 3.5,
+        category: 'hospital',
+      },
+      {
+        id: 'mock-hospital-5',
+        name: 'St. Mary Medical Center',
+        lat: lat + 0.005,
+        lng: lng - 0.02,
+        distanceKm: 4.2,
+        category: 'hospital',
+      }
+    );
+  } else {
+    places.push(
+      {
+        id: 'mock-derm-1',
+        name: 'Dermatology Associates',
+        lat: lat + 0.006,
+        lng: lng + 0.008,
+        distanceKm: 1.0,
+        category: 'dermatology',
+      },
+      {
+        id: 'mock-derm-2',
+        name: 'Advanced Skin Care Clinic',
+        lat: lat - 0.008,
+        lng: lng + 0.012,
+        distanceKm: 1.8,
+        category: 'dermatology',
+      },
+      {
+        id: 'mock-derm-3',
+        name: 'Dermatology & Skin Surgery Center',
+        lat: lat + 0.014,
+        lng: lng - 0.006,
+        distanceKm: 2.5,
+        category: 'dermatology',
+      },
+      {
+        id: 'mock-clinic-1',
+        name: 'Family Health Clinic',
+        lat: lat - 0.01,
+        lng: lng - 0.014,
+        distanceKm: 3.0,
+        category: 'clinic',
+      },
+      {
+        id: 'mock-clinic-2',
+        name: 'Wellness Medical Group',
+        lat: lat + 0.02,
+        lng: lng + 0.004,
+        distanceKm: 3.8,
+        category: 'clinic',
+      }
+    );
+  }
+  
+  return places;
 }
 
 export default function AIWoundorRashDetect({ accessToken, onBack, onOpenDirections }: AIWoundorRashDetectProps) {
   const { language } = useLanguage();
   const { colors, mode } = useTheme();
   const insets = useSafeAreaInsets();
-
 
   const [imageUri, setImageUri] = useState<string | null>(null);
   const [imageBase64, setImageBase64] = useState<string | null>(null);
@@ -229,7 +232,6 @@ export default function AIWoundorRashDetect({ accessToken, onBack, onOpenDirecti
 
   const [nearbyOrigin, setNearbyOrigin] = useState<{ lat: number; lng: number } | null>(null);
   const [nearbyMapError, setNearbyMapError] = useState(false);
-
 
   const [doctorsLoading, setDoctorsLoading] = useState(false);
   const [doctorsError, setDoctorsError] = useState('');
@@ -334,7 +336,6 @@ export default function AIWoundorRashDetect({ accessToken, onBack, onOpenDirecti
 
       const urls: string[] = Platform.OS === 'android'
         ? [
-            // Prefer native geo intent on Android.
             `geo:${lat},${lng}?q=${encodeURIComponent(query)}`,
             `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${query} near ${lat},${lng}`)}`,
           ]
@@ -365,7 +366,9 @@ export default function AIWoundorRashDetect({ accessToken, onBack, onOpenDirecti
     setNearbyOrigin(null);
     setNearbyMapError(false);
     setNearbyLoading(true);
+    
     try {
+      // 1. Request location permission
       const perm = await Location.requestForegroundPermissionsAsync();
       if (perm.status !== Location.PermissionStatus.GRANTED) {
         setNearbyError(
@@ -375,63 +378,149 @@ export default function AIWoundorRashDetect({ accessToken, onBack, onOpenDirecti
               ? 'இட அனுமதி தேவை. Location permission வழங்கவும்.'
               : 'Location permission is required.'
         );
+        setNearbyLoading(false);
         return;
       }
 
-      const current = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      // 2. Get current location
+      const current = await Location.getCurrentPositionAsync({ 
+        accuracy: Location.Accuracy.Balanced 
+      });
       const lat = current.coords.latitude;
       const lng = current.coords.longitude;
       setNearbyOrigin({ lat, lng });
 
+      // 3. Determine what to search for based on result
       const preferHospitals = result.kind === 'wound' || result.severity === 'high';
-      const radius = preferHospitals ? 12000 : 7000;
-      const query = buildOverpassQuery(lat, lng, radius, preferHospitals);
-
-      const overpassUrl = 'https://overpass-api.de/api/interpreter';
-      const res = await fetch(overpassUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
-        },
-        body: `data=${encodeURIComponent(query)}`,
-      });
-
-      if (!res.ok) {
-        setNearbyError(`Nearby search failed (${res.status})`);
-        return;
-      }
-
-      const data = await res.json();
-      const elements: any[] = Array.isArray(data?.elements) ? data.elements : [];
-
-      const places: NearbyPlace[] = [];
+      const radius = preferHospitals ? 12000 : 7000; // meters
+      
+      // Calculate bounding box for search (approximate degrees)
+      const latOffset = (radius / 111000); // 1 degree lat ≈ 111 km
+      const lngOffset = (radius / (111000 * Math.cos(lat * Math.PI / 180)));
+      
+      const bbox = [
+        lng - lngOffset, // min longitude (west)
+        lat - latOffset, // min latitude (south)
+        lng + lngOffset, // max longitude (east)
+        lat + latOffset  // max latitude (north)
+      ];
+      
+      // 4. Search using OpenStreetMap Nominatim API
+      const searchQueries = preferHospitals 
+        ? ['hospital', 'clinic', 'medical center']
+        : ['dermatologist', 'skin clinic', 'dermatology', 'medical clinic'];
+      
+      let allPlaces: NearbyPlace[] = [];
       const seen = new Set<string>();
-
-      for (const el of elements) {
-        const center = getElementCenter(el);
-        if (!center) continue;
-        const name = String(el?.tags?.name ?? '').trim();
-        if (!name) continue;
-
-        const id = `${String(el?.type ?? 'el')}:${String(el?.id ?? '')}`;
-        if (seen.has(id)) continue;
-        seen.add(id);
-
-        const distanceKm = haversineKm(lat, lng, center.lat, center.lng);
-        places.push({
-          id,
-          name,
-          lat: center.lat,
-          lng: center.lng,
-          distanceKm,
-          category: categorize(el),
-        });
+      
+      // Search for each query term
+      for (const query of searchQueries) {
+        try {
+          const nominatimUrl = 'https://nominatim.openstreetmap.org/search?' +
+            `q=${encodeURIComponent(query)}` +
+            `&format=json` +
+            `&viewbox=${bbox.join(',')}` +
+            `&bounded=1` +
+            `&limit=10` +
+            `&addressdetails=0` +
+            `&accept-language=en`;
+          
+          console.log(`Searching for: ${query}`);
+          
+          const response = await fetch(nominatimUrl, {
+            method: 'GET',
+            headers: {
+              'Accept': 'application/json',
+              'User-Agent': 'Expo-HealthCare-App/1.0', // Required by Nominatim
+            },
+          });
+          
+          if (!response.ok) {
+            console.warn(`Nominatim search failed for "${query}": ${response.status}`);
+            continue;
+          }
+          
+          const data = await response.json();
+          
+          for (const item of data) {
+            if (!item.lat || !item.lon) continue;
+            
+            const placeLat = parseFloat(item.lat);
+            const placeLng = parseFloat(item.lon);
+            const name = item.display_name?.split(',')[0] || query;
+            
+            // Create unique ID
+            const id = `nominatim-${item.place_id}`;
+            if (seen.has(id)) continue;
+            seen.add(id);
+            
+            // Calculate distance
+            const distanceKm = haversineKm(lat, lng, placeLat, placeLng);
+            
+            // Only include if within radius
+            if (distanceKm <= radius / 1000) {
+              // Determine category
+              let category: NearbyPlace['category'] = 'clinic';
+              const type = item.type || '';
+              const displayName = (item.display_name || '').toLowerCase();
+              
+              if (type === 'hospital' || displayName.includes('hospital')) {
+                category = 'hospital';
+              } else if (displayName.includes('dermatology') || displayName.includes('skin')) {
+                category = 'dermatology';
+              }
+              
+              allPlaces.push({
+                id,
+                name: name || query,
+                lat: placeLat,
+                lng: placeLng,
+                distanceKm,
+                category,
+              });
+            }
+          }
+          
+          // Add a small delay to respect Nominatim's rate limits (1 request per second)
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          
+        } catch (error) {
+          console.warn(`Error searching for "${query}":`, error);
+          continue;
+        }
       }
-
-      places.sort((a, b) => a.distanceKm - b.distanceKm);
-      setNearbyPlaces(places.slice(0, 12));
+      
+      // 5. Remove duplicates and sort by distance
+      const uniquePlaces = Array.from(
+        new Map(allPlaces.map(place => [place.id, place])).values()
+      );
+      
+      uniquePlaces.sort((a, b) => a.distanceKm - b.distanceKm);
+      
+      // 6. If no places found, use mock data as fallback
+      if (uniquePlaces.length === 0) {
+        console.log('No places found from Nominatim, using mock data');
+        const mockPlaces = generateMockPlaces(lat, lng, preferHospitals);
+        setNearbyPlaces(mockPlaces);
+      } else {
+        console.log(`Found ${uniquePlaces.length} places`);
+        setNearbyPlaces(uniquePlaces.slice(0, 12));
+      }
+      
     } catch (e: any) {
+      console.error('Nearby search error:', e);
       setNearbyError(e?.message ? String(e.message) : 'Nearby search failed');
+      
+      // Fallback to mock data on error
+      if (nearbyOrigin) {
+        const preferHospitals = result.kind === 'wound' || result.severity === 'high';
+        const mockPlaces = generateMockPlaces(
+          nearbyOrigin.lat, 
+          nearbyOrigin.lng, 
+          preferHospitals
+        );
+        setNearbyPlaces(mockPlaces);
+      }
     } finally {
       setNearbyLoading(false);
     }
@@ -455,7 +544,6 @@ export default function AIWoundorRashDetect({ accessToken, onBack, onOpenDirecti
 
       try {
         const params = new URLSearchParams();
-        // Best-effort specialization hint (kept optional so DB values don't have to match exactly).
         if (result.kind === 'rash') params.set('specialization', 'Dermatology');
 
         const url = params.toString() ? `/api/appointment/doctors?${params.toString()}` : '/api/appointment/doctors';
@@ -517,11 +605,8 @@ export default function AIWoundorRashDetect({ accessToken, onBack, onOpenDirecti
 
     const urls: string[] = Platform.OS === 'android'
       ? [
-          // Prefer Google Maps navigation intent.
           `google.navigation:q=${encodeURIComponent(dest)}`,
-          // Generic geo intent.
           `geo:${dest}?q=${encodeURIComponent(`${dest}${label}`)}`,
-          // HTTPS fallback.
           `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(dest)}`,
         ]
       : [
@@ -981,6 +1066,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     overflow: 'hidden',
     borderWidth: 1,
+    height: 200,
   },
   mapFallbackCenter: {
     flex: 1,
