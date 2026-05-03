@@ -6,6 +6,9 @@ import {
   TouchableOpacity,
   ScrollView,
   Platform,
+  Animated,
+  Dimensions,
+  StyleSheet,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -37,8 +40,9 @@ import { downloadReportAsPdfAsync } from './patientDashboard/reportDownloads';
 import { computeMedicineAlarmKey, getLocalYyyyMmDd, parseTimeParts } from './patientDashboard/dateTime';
 import { reconcilePatientAlarmScheduleAsync as reconcilePatientAlarmScheduleAsyncLib } from './patientDashboard/alarmScheduler';
 import { usePatientDashboardEffects } from './patientDashboard/usePatientDashboardEffects';
-import { styles } from './patientDashboard/styles';
 import type { AppointmentRow, ClinicRow, DoctorRow, MedicalReportRow, MedicationRow, MedicineReminderRow, PatientNotification } from './patientDashboard/types';
+
+const { width: screenWidth } = Dimensions.get('window');
 
 type PatientdashboardProps = {
   accessToken?: string;
@@ -61,6 +65,91 @@ type PatientdashboardProps = {
   onLogout?: () => void;
 };
 
+const modernStyles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
+  statusBar: {
+    backgroundColor: 'transparent',
+  },
+  header: {
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    paddingTop: 12,
+  },
+  headerTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 12,
+  },
+  titleContainer: {
+    flex: 1,
+  },
+  title: {
+    fontSize: 28,
+    fontWeight: '700',
+    letterSpacing: -0.5,
+    marginBottom: 4,
+  },
+  subtitle: {
+    fontSize: 13,
+    fontWeight: '500',
+    letterSpacing: 0.3,
+    opacity: 0.6,
+    textTransform: 'uppercase',
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  notificationButton: {
+    position: 'relative',
+    padding: 10,
+    borderRadius: 12,
+  },
+  badge: {
+    position: 'absolute',
+    top: 2,
+    right: 2,
+    minWidth: 20,
+    height: 20,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+  },
+  badgeText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  content: {
+    flex: 1,
+  },
+  scrollContent: {
+    paddingHorizontal: 20,
+    paddingVertical: 20,
+  },
+  // Profile styles
+  profileLogoutBtn: {
+    marginTop: 28,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 20,
+  },
+  profileLogoutText: {
+    fontSize: 16,
+    fontWeight: '600',
+    letterSpacing: 0.2,
+  },
+});
+
 export default function Patientdashboard({
   accessToken,
   pendingMedicineTake,
@@ -75,6 +164,8 @@ export default function Patientdashboard({
   const { language } = useLanguage();
   const { colors, mode } = useTheme();
   const [activeTab, setActiveTab] = useState<PatientTabKey>('home');
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(20)).current;
 
   const reminderToastTimer = useRef<NodeJS.Timeout | null>(null);
   const medicineScrollRef = useRef<ScrollView | null>(null);
@@ -109,14 +200,10 @@ export default function Patientdashboard({
   });
 
   const [profileLoadError, setProfileLoadError] = useState<string>('');
-
   const [ambulanceStatus, setAmbulanceStatus] = useState<PatientNotification | null>(null);
-
   const [realtimeHomeTick, setRealtimeHomeTick] = useState(0);
   const [realtimeAmbulanceTick, setRealtimeAmbulanceTick] = useState(0);
-
   const [notificationCount, setNotificationCount] = useState<number>(0);
-
   const [medicineClockTick, setMedicineClockTick] = useState(0);
 
   const [homeLoading, setHomeLoading] = useState(false);
@@ -168,6 +255,22 @@ export default function Patientdashboard({
         notes?: string;
       }
   >(null);
+
+  // Animation on mount
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 500,
+        useNativeDriver: true,
+      }),
+      Animated.timing(slideAnim, {
+        toValue: 0,
+        duration: 500,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, [fadeAnim, slideAnim]);
 
   const title = useMemo(() => {
     if (language === 'sinhala') return 'රෝගී පුවරුව';
@@ -400,6 +503,7 @@ export default function Patientdashboard({
     setAppointmentReason('');
     setAppointmentError('');
   };
+
   const showReminderToast = (variant: 'success' | 'error' | 'info', message: string) => {
     if (reminderToastTimer.current) {
       clearTimeout(reminderToastTimer.current);
@@ -513,7 +617,7 @@ export default function Patientdashboard({
   };
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top', 'bottom']}>
+    <SafeAreaView style={[modernStyles.container, { backgroundColor: colors.background }]} edges={['top', 'bottom']}>
       <StatusBar barStyle={mode === 'dark' ? 'light-content' : 'dark-content'} backgroundColor={colors.background} translucent={false} />
 
       <MedicineDetailsModal
@@ -543,33 +647,45 @@ export default function Patientdashboard({
         onClose={() => setClinicDetailsCard(null)}
       />
 
-      <View style={[styles.header, { borderBottomColor: colors.border }]}> 
-        <View style={styles.headerTop}>
-          <Text style={[styles.title, { color: colors.primary }]}>{title}</Text>
-          <View style={styles.headerActions}>
+      {/* Modern Header with Animated Entrance */}
+      <Animated.View
+        style={[
+          modernStyles.header,
+          {
+            opacity: fadeAnim,
+            transform: [{ translateY: slideAnim }],
+          },
+        ]}
+      >
+        <View style={modernStyles.headerTop}>
+          <View style={modernStyles.titleContainer}>
+            <Text style={[modernStyles.title, { color: colors.primary }]}>{title}</Text>
+          </View>
+          <View style={modernStyles.headerActions}>
             {!!onOpenNotifications && (
               <TouchableOpacity
                 onPress={onOpenNotifications}
-                activeOpacity={0.8}
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                activeOpacity={0.6}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                 accessibilityRole="button"
                 accessibilityLabel="Notifications"
-                style={styles.bellWrap}
+                style={[modernStyles.notificationButton, { backgroundColor: colors.card }]}
               >
-                <Ionicons name="notifications-outline" size={20} color={colors.text} />
+                <Ionicons name="notifications" size={20} color={colors.primary} />
                 {notificationCount > 0 && (
-                  <View style={[styles.badge, { backgroundColor: colors.danger, borderColor: colors.background }]}>
-                    <Text style={styles.badgeText}>{notificationCount}</Text>
+                  <View style={[modernStyles.badge, { backgroundColor: colors.danger, borderColor: colors.background }]}>
+                    <Text style={modernStyles.badgeText}>{notificationCount}</Text>
                   </View>
                 )}
               </TouchableOpacity>
             )}
           </View>
         </View>
-        <Text style={[styles.subtitle, { color: colors.subtext }]}>{tabTitle}</Text>
-      </View>
+        <Text style={[modernStyles.subtitle, { color: colors.subtext }]}>{tabTitle}</Text>
+      </Animated.View>
 
-      <View style={styles.content}>
+      {/* Content Area */}
+      <View style={modernStyles.content}>
         {activeTab === 'home' ? (
           <HomeTab
             accessToken={accessToken}
@@ -600,7 +716,6 @@ export default function Patientdashboard({
             onOpenNearbyAmbulance={() => {
               if (!onOpenNearbyAmbulance) return;
 
-              // Clear previous ambulance request status/notifications before trying again.
               void (async () => {
                 if (accessToken) {
                   try {
@@ -687,7 +802,7 @@ export default function Patientdashboard({
             onDownloadReportPdf={handleDownloadReportPdf}
           />
         ) : (
-          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={modernStyles.scrollContent}>
             {profileView === 'verify-email' ? (
               <EmailChangeVerificationCard
                 pendingEmail={pendingEmail}
@@ -720,13 +835,13 @@ export default function Patientdashboard({
 
             {!!onLogout && (
               <TouchableOpacity
-                style={[styles.profileLogoutBtn, { borderColor: colors.danger }]}
-                activeOpacity={0.85}
+                style={[modernStyles.profileLogoutBtn, { borderColor: colors.danger }]}
+                activeOpacity={0.65}
                 onPress={onLogout}
                 accessibilityRole="button"
                 accessibilityLabel="Logout"
               >
-                <Text style={[styles.profileLogoutText, { color: colors.danger }]}>
+                <Text style={[modernStyles.profileLogoutText, { color: colors.danger }]}>
                   {language === 'sinhala' ? 'පිටවීම' : language === 'tamil' ? 'வெளியேறு' : 'Logout'}
                 </Text>
               </TouchableOpacity>
@@ -740,6 +855,7 @@ export default function Patientdashboard({
         )}
       </View>
 
+      {/* Bottom Tab Navigation */}
       <PatientTabs activeTab={activeTab} onChange={setActiveTab} />
     </SafeAreaView>
   );

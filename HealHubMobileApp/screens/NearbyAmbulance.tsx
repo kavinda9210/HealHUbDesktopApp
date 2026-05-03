@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, StatusBar, ActivityIndicator, Linking, Platform, Image, Alert } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Ionicons, MaterialCommunityIcons, FontAwesome5 } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 
 import { useLanguage } from '../context/LanguageContext';
@@ -47,7 +48,6 @@ async function openDirections(lat: number, lng: number) {
       // try next
     }
   }
-
   throw new Error('Cannot open Maps');
 }
 
@@ -80,7 +80,7 @@ export default function NearbyAmbulance({ accessToken, onBack }: NearbyAmbulance
   const enableLocationLabel = useMemo(() => {
     if (language === 'sinhala') return 'ස්ථානය සක්‍රීය කරන්න';
     if (language === 'tamil') return 'இடத்தை இயக்கவும்';
-    return 'Turn on location';
+    return 'Enable Location';
   }, [language]);
 
   const refreshLabel = useMemo(() => {
@@ -106,23 +106,19 @@ export default function NearbyAmbulance({ accessToken, onBack }: NearbyAmbulance
       setErrorMessage('Please log in to request an ambulance');
       return;
     }
-
     setErrorMessage('');
     setSuccessMessage('');
-
     const res = await apiPost<any>(
       '/api/patient/ambulances/nearby',
       { latitude, longitude, radius_km: 15, limit: 20 },
       accessToken
     );
-
     if (!res.ok || res.data?.success === false) {
       const msg = (res.data && (res.data.message || res.data.error)) || 'Failed to fetch nearby ambulances';
       setErrorMessage(String(msg));
       setAmbulances([]);
       return;
     }
-
     setAmbulances(Array.isArray(res.data?.data) ? res.data.data : []);
   };
 
@@ -136,7 +132,6 @@ export default function NearbyAmbulance({ accessToken, onBack }: NearbyAmbulance
         setCoords(null);
         return;
       }
-
       const current = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
       setCoords(current.coords);
       await fetchNearby(current.coords.latitude, current.coords.longitude);
@@ -147,9 +142,7 @@ export default function NearbyAmbulance({ accessToken, onBack }: NearbyAmbulance
 
   const requestSpecificAmbulance = async (ambulanceId: number) => {
     if (!accessToken || !coords) return;
-
     const selected = ambulances.find((a) => a.ambulance_id === ambulanceId) ?? null;
-
     setRequestingId(ambulanceId);
     setErrorMessage('');
     setSuccessMessage('');
@@ -159,46 +152,32 @@ export default function NearbyAmbulance({ accessToken, onBack }: NearbyAmbulance
         { latitude: coords.latitude, longitude: coords.longitude },
         accessToken
       );
-
       if (!res.ok || res.data?.success === false) {
         const msg = (res.data && (res.data.message || res.data.error)) || 'Failed to send request';
         setErrorMessage(String(msg));
         return;
       }
-
       setSuccessMessage(String(res.data?.message || 'Ambulance request sent'));
-
-      // Show the requested UX: alert with ambulance vehicle number + phone.
       try {
         const ambulanceNumber = selected?.ambulance_number ? String(selected.ambulance_number) : String(ambulanceId);
         const phone = selected?.driver_phone ? String(selected.driver_phone) : '';
-        const alertTitle = language === 'sinhala'
-          ? 'ඉල්ලීම යවලා ඇත'
-          : language === 'tamil'
-            ? 'கோரிக்கை அனுப்பப்பட்டது'
-            : 'Request sent';
+        const alertTitle = language === 'sinhala' ? 'ඉල්ලීම යවලා ඇත' : language === 'tamil' ? 'கோரிக்கை அனுப்பப்பட்டது' : 'Request Sent';
         const alertBody = (language === 'sinhala'
           ? `ඔබගේ ඉල්ලීම ඇම්බියුලන්ස් ${ambulanceNumber} වෙත යවා ඇත.`
           : language === 'tamil'
             ? `உங்கள் கோரிக்கை ஆம்புலன்ஸ் ${ambulanceNumber} க்கு அனுப்பப்பட்டது.`
             : `Your request has been sent to ambulance ${ambulanceNumber}.`
         ) + (phone ? `\nPhone: ${phone}` : '');
-
         const buttons: any[] = [];
         if (phone && Platform.OS !== 'web') {
           buttons.push({
             text: language === 'sinhala' ? 'අමතන්න' : language === 'tamil' ? 'அழைக்க' : 'Call',
-            onPress: () => {
-              void Linking.openURL(`tel:${encodeURIComponent(phone)}`);
-            },
+            onPress: () => void Linking.openURL(`tel:${encodeURIComponent(phone)}`),
           });
         }
         buttons.push({ text: 'OK' });
         Alert.alert(alertTitle, alertBody, buttons);
-      } catch {
-        // ignore
-      }
-
+      } catch { /* ignore */ }
       await fetchNearby(coords.latitude, coords.longitude);
     } finally {
       setRequestingId(null);
@@ -215,7 +194,6 @@ export default function NearbyAmbulance({ accessToken, onBack }: NearbyAmbulance
       kind?: 'ambulance' | 'patient' | 'pin' | 'default';
       iconText?: string;
     }> = [];
-
     if (coords) {
       list.push({
         id: 'patient',
@@ -226,7 +204,6 @@ export default function NearbyAmbulance({ accessToken, onBack }: NearbyAmbulance
         kind: 'patient',
       });
     }
-
     for (const a of ambulances) {
       const lat = typeof a.current_latitude === 'number' ? a.current_latitude : null;
       const lng = typeof a.current_longitude === 'number' ? a.current_longitude : null;
@@ -240,14 +217,12 @@ export default function NearbyAmbulance({ accessToken, onBack }: NearbyAmbulance
         kind: 'ambulance',
       });
     }
-
     return list;
   }, [ambulances, colors.danger, colors.primary, coords, language]);
 
   const staticMapUrl = useMemo(() => {
     const centerLat = coords?.latitude ?? (ambulances[0]?.current_latitude ?? 0);
     const centerLng = coords?.longitude ?? (ambulances[0]?.current_longitude ?? 0);
-
     const markers: Array<{ lat: number; lng: number; color: 'red' | 'blue' }> = [];
     if (coords) markers.push({ lat: coords.latitude, lng: coords.longitude, color: 'red' });
     for (const a of ambulances.slice(0, 8)) {
@@ -256,7 +231,6 @@ export default function NearbyAmbulance({ accessToken, onBack }: NearbyAmbulance
       if (lat == null || lng == null) continue;
       markers.push({ lat, lng, color: 'blue' });
     }
-
     return buildStaticOsmMapUrl({
       centerLat: Number(centerLat) || 0,
       centerLng: Number(centerLng) || 0,
@@ -266,100 +240,130 @@ export default function NearbyAmbulance({ accessToken, onBack }: NearbyAmbulance
     });
   }, [ambulances, coords, mapStatus]);
 
-  const emergencySurface = mode === 'dark' ? '#2b1d1f' : '#fee2e2';
-
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top', 'bottom']}>
       <StatusBar barStyle={mode === 'dark' ? 'light-content' : 'dark-content'} backgroundColor={colors.background} translucent={false} />
-
       <ScrollView
         style={{ flex: 1, backgroundColor: colors.background }}
         contentContainerStyle={{ paddingBottom: Math.max(24, insets.bottom + 12) }}
         showsVerticalScrollIndicator={false}
       >
+        {/* Header */}
         <View style={styles.headerRow}>
-          <Text style={[styles.title, { color: colors.primary }]}>{title}</Text>
           {!!onBack && (
-            <TouchableOpacity onPress={onBack} activeOpacity={0.75} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-              <Text style={[styles.backText, { color: colors.primary }]}>
-                {language === 'sinhala' ? 'ආපසු' : language === 'tamil' ? 'பின்செல்' : 'Back'}
-              </Text>
+            <TouchableOpacity onPress={onBack} activeOpacity={0.7} style={styles.backButton}>
+              <Ionicons name="arrow-back" size={24} color={colors.primary} />
             </TouchableOpacity>
           )}
+          <Text style={[styles.title, { color: colors.text }]}>{title}</Text>
         </View>
 
         <Text style={[styles.subtitle, { color: colors.subtext }]}>{subtitle}</Text>
 
-        <View style={[styles.heroCard, { backgroundColor: emergencySurface, borderColor: colors.border }]}>
-          <View style={{ flex: 1 }}>
-            <Text style={[styles.heroTitle, { color: colors.text }]}>
-              {language === 'sinhala' ? 'හදිසි සේවා' : language === 'tamil' ? 'அவசர சேவை' : 'Emergency service'}
-            </Text>
-            <Text style={[styles.heroSub, { color: colors.subtext }]}>
-              {language === 'sinhala'
-                ? 'ස්ථානය සක්‍රීය කළ පසු ආසන්න ඇම්බියුලන්ස් ලැයිස්තුගත වේ.'
-                : language === 'tamil'
-                  ? 'இடம் இயக்கப்பட்டதும் அருகிலுள்ள ஆம்புலன்ஸ் பட்டியல் வரும்.'
-                  : 'Once location is enabled, nearby ambulances will be listed.'}
-            </Text>
+        {/* Location Card - VERTICAL LAYOUT: icon + text above, button below */}
+        <View style={[styles.locationCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <View style={styles.locationTopRow}>
+            <View style={styles.locationIconContainer}>
+              <View style={[styles.locationIconBg, { backgroundColor: colors.danger + '15' }]}>
+                <Ionicons name="location" size={32} color={colors.danger} />
+              </View>
+            </View>
+            <View style={styles.locationContent}>
+              <Text style={[styles.locationTitle, { color: colors.text }]}>
+                {language === 'sinhala' ? 'ස්ථානය සක්‍රීය කරන්න' : language === 'tamil' ? 'இருப்பிடத்தை இயக்கவும்' : 'Enable Location'}
+              </Text>
+              <Text style={[styles.locationSub, { color: colors.subtext }]}>
+                {language === 'sinhala'
+                  ? 'ආසන්න ඇම්බියුලන්ස් සොයා ගැනීමට ස්ථානය සක්‍රීය කරන්න'
+                  : language === 'tamil'
+                    ? 'அருகிலுள்ள ஆம்புலன்ஸ்களை கண்டறிய இருப்பிடத்தை இயக்கவும்'
+                    : 'Enable location to find nearby ambulances'}
+              </Text>
+            </View>
           </View>
 
           <TouchableOpacity
-            style={[styles.primaryBtn, { backgroundColor: colors.danger }]}
-            activeOpacity={0.85}
+            style={[styles.enableButton, { backgroundColor: colors.danger }]}
+            activeOpacity={0.8}
             onPress={requestPermissionAndLocation}
             disabled={loading}
           >
-            {loading ? <ActivityIndicator color="#ffffff" /> : <Text style={styles.primaryBtnText}>{enableLocationLabel}</Text>}
+            {loading ? (
+              <ActivityIndicator color="#ffffff" size="small" />
+            ) : (
+              <>
+                <Ionicons name="navigate" size={18} color="#fff" />
+                <Text style={styles.enableButtonText}>{enableLocationLabel}</Text>
+              </>
+            )}
           </TouchableOpacity>
         </View>
 
-        <View style={[styles.sectionCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <View style={styles.sectionHeader}>
-            <Text style={[styles.sectionTitle, { color: colors.text }]}>GPS</Text>
-            <TouchableOpacity
-              onPress={requestPermissionAndLocation}
-              activeOpacity={0.8}
-              style={[styles.refreshBtn, { borderColor: colors.border }]}
-            >
-              <Text style={[styles.refreshBtnText, { color: colors.subtext }]}>{refreshLabel}</Text>
+        {/* GPS Info Card (unchanged) */}
+        <View style={[styles.infoCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <View style={styles.cardHeader}>
+            <View style={styles.cardHeaderLeft}>
+              <Ionicons name="location-outline" size={22} color={colors.primary} />
+              <Text style={[styles.cardTitle, { color: colors.text }]}>GPS Location</Text>
+            </View>
+            <TouchableOpacity onPress={requestPermissionAndLocation} activeOpacity={0.7} style={styles.refreshButton}>
+              <Ionicons name="refresh-outline" size={18} color={colors.primary} />
+              <Text style={[styles.refreshButtonText, { color: colors.primary }]}>{refreshLabel}</Text>
             </TouchableOpacity>
           </View>
 
-          <Text style={[styles.gpsText, { color: colors.subtext }]}>Permission: {permission}</Text>
-          <Text style={[styles.gpsText, { color: colors.subtext }]}>Latitude: {coords ? coords.latitude.toFixed(5) : '-'}</Text>
-          <Text style={[styles.gpsText, { color: colors.subtext }]}>Longitude: {coords ? coords.longitude.toFixed(5) : '-'}</Text>
+          <View style={styles.gpsInfoGrid}>
+            <View style={styles.gpsRow}>
+              <Text style={[styles.gpsLabel, { color: colors.subtext }]}>Permission</Text>
+              <View style={styles.permissionBadge}>
+                <View style={[styles.permissionDot, { backgroundColor: permission === 'granted' ? '#10B981' : '#F59E0B' }]} />
+                <Text style={[styles.gpsValue, { color: colors.text }]}>
+                  {permission === 'granted' ? 'Granted' : permission === 'denied' ? 'Denied' : 'Unknown'}
+                </Text>
+              </View>
+            </View>
+            <View style={styles.gpsRow}>
+              <Text style={[styles.gpsLabel, { color: colors.subtext }]}>Latitude</Text>
+              <Text style={[styles.gpsValue, { color: colors.text }]}>{coords ? coords.latitude.toFixed(6) : '—'}</Text>
+            </View>
+            <View style={styles.gpsRow}>
+              <Text style={[styles.gpsLabel, { color: colors.subtext }]}>Longitude</Text>
+              <Text style={[styles.gpsValue, { color: colors.text }]}>{coords ? coords.longitude.toFixed(6) : '—'}</Text>
+            </View>
+          </View>
 
-          {!!errorMessage && <Text style={[styles.note, { color: colors.danger }]}>{errorMessage}</Text>}
-          {!!successMessage && <Text style={[styles.note, { color: colors.primary }]}>{successMessage}</Text>}
-
-          {permission === Location.PermissionStatus.DENIED && (
-            <Text style={[styles.note, { color: colors.subtext }]}>
-              {language === 'sinhala'
-                ? 'ස්ථානයට අවසර දී නොමැත. නැවත උත්සාහ කරන්න.'
-                : language === 'tamil'
-                  ? 'இட அனுமதி மறுக்கப்பட்டது. மீண்டும் முயற்சிக்கவும்.'
-                  : 'Location permission denied. Try again.'}
-            </Text>
+          {!!errorMessage && (
+            <View style={[styles.alertBox, { backgroundColor: colors.danger + '10' }]}>
+              <Ionicons name="alert-circle" size={18} color={colors.danger} />
+              <Text style={[styles.alertText, { color: colors.danger }]}>{errorMessage}</Text>
+            </View>
+          )}
+          {!!successMessage && (
+            <View style={[styles.alertBox, { backgroundColor: colors.primary + '10' }]}>
+              <Ionicons name="checkmark-circle" size={18} color={colors.primary} />
+              <Text style={[styles.alertText, { color: colors.primary }]}>{successMessage}</Text>
+            </View>
           )}
         </View>
 
-        <View style={[styles.sectionCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <Text style={[styles.sectionTitle, { color: colors.text }]}>Ambulances</Text>
-
-          {(coords || mapMarkers.length > 0) ? (
-            <View style={[styles.mapWrap, { borderColor: colors.border }]}>
+        {/* Map Section */}
+        {(coords || mapMarkers.length > 0) && (
+          <View style={[styles.mapCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <Text style={[styles.mapTitle, { color: colors.text }]}>Live Location Map</Text>
+            <View style={[styles.mapContainer, { borderColor: colors.border }]}>
               {Platform.OS === 'web' ? (
-                <View style={styles.mapFallbackCenter}>
-                  <Text style={[styles.note, { color: colors.subtext, marginTop: 0 }]}>Map is not available on web.</Text>
+                <View style={styles.mapFallback}>
+                  <Ionicons name="map-outline" size={48} color={colors.subtext + '50'} />
+                  <Text style={[styles.fallbackText, { color: colors.subtext }]}>Map preview not available on web</Text>
                 </View>
               ) : (
                 <MapErrorBoundary
-                  fallback={(
-                    <View style={styles.mapFallbackCenter}>
-                      <Text style={[styles.note, { color: colors.subtext, marginTop: 0, textAlign: 'center' }]}>Map failed to load. Check your internet connection.</Text>
+                  fallback={
+                    <View style={styles.mapFallback}>
+                      <Ionicons name="cloud-offline" size={48} color={colors.subtext + '50'} />
+                      <Text style={[styles.fallbackText, { color: colors.subtext }]}>Unable to load map</Text>
                     </View>
-                  )}
+                  }
                 >
                   <View style={StyleSheet.absoluteFillObject}>
                     <MapLibreView
@@ -369,75 +373,106 @@ export default function NearbyAmbulance({ accessToken, onBack }: NearbyAmbulance
                       focus={coords ? { lat: coords.latitude, lng: coords.longitude, zoom: 13 } : null}
                       onLoadError={() => setMapStatus('error')}
                     />
-
-                    {mapStatus === 'error' && (
-                      <Image
-                        source={{ uri: staticMapUrl }}
-                        style={StyleSheet.absoluteFillObject}
-                        resizeMode="cover"
-                        onLoad={() => setMapStatus('ready')}
-                        onError={() => setMapStatus('error')}
-                      />
-                    )}
                   </View>
                 </MapErrorBoundary>
               )}
             </View>
-          ) : null}
+          </View>
+        )}
 
-          {ambulances.map((a) => {
+        {/* Ambulances Section */}
+        <View style={[styles.ambulanceCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <View style={styles.cardHeader}>
+            <View style={styles.cardHeaderLeft}>
+              <FontAwesome5 name="ambulance" size={20} color={colors.primary} />
+              <Text style={[styles.cardTitle, { color: colors.text }]}>Nearby Ambulances</Text>
+            </View>
+            <Text style={[styles.ambulanceCount, { color: colors.primary }]}>{ambulances.length} found</Text>
+          </View>
+
+          {ambulances.map((a, index) => {
             const busy = a.is_available === false;
             const lat = typeof a.current_latitude === 'number' ? a.current_latitude : null;
             const lng = typeof a.current_longitude === 'number' ? a.current_longitude : null;
             return (
-              <View key={String(a.ambulance_id)} style={[styles.itemRow, { borderTopColor: colors.border }]}>
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.itemTitle, { color: colors.text }]}>{a.ambulance_number}</Text>
-                  <Text style={[styles.itemSub, { color: colors.subtext }]}>
-                    {typeof a.distance_km === 'number' ? `${a.distance_km.toFixed(1)} km` : '-'} • {typeof a.estimated_arrival === 'number' ? `${Math.round(a.estimated_arrival)} min` : '-'} • {busy ? (language === 'sinhala' ? 'කාර්යබහුලයි' : language === 'tamil' ? 'பணியில்' : 'Busy') : (language === 'sinhala' ? 'ලබා ගත හැක' : language === 'tamil' ? 'கிடைக்கும்' : 'Available')}
-                  </Text>
-                  <Text style={[styles.itemSub, { color: colors.subtext }]}>Driver: {a.driver_name} • {a.driver_phone}</Text>
+              <View key={String(a.ambulance_id)} style={[styles.ambulanceItem, index !== ambulances.length - 1 && { borderBottomColor: colors.border, borderBottomWidth: 1 }]}>
+                <View style={[styles.ambulanceIconBg, { backgroundColor: busy ? colors.subtext + '10' : colors.primary + '10' }]}>
+                  <FontAwesome5 name="ambulance" size={24} color={busy ? colors.subtext : colors.primary} />
                 </View>
 
-                <View style={{ gap: 8, alignItems: 'flex-end' }}>
+                <View style={styles.ambulanceInfo}>
+                  <View style={styles.ambulanceHeader}>
+                    <Text style={[styles.ambulanceNumber, { color: colors.text }]}>{a.ambulance_number}</Text>
+                    <View style={[styles.statusBadge, { backgroundColor: busy ? colors.subtext + '10' : '#10B98115' }]}>
+                      <View style={[styles.statusDot, { backgroundColor: busy ? colors.subtext : '#10B981' }]} />
+                      <Text style={[styles.statusText, { color: busy ? colors.subtext : '#10B981' }]}>
+                        {busy ? 'Busy' : 'Available'}
+                      </Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.ambulanceDetails}>
+                    <View style={styles.detailChip}>
+                      <Ionicons name="location-outline" size={12} color={colors.subtext} />
+                      <Text style={[styles.detailText, { color: colors.subtext }]}>{typeof a.distance_km === 'number' ? `${a.distance_km.toFixed(1)} km` : '—'}</Text>
+                    </View>
+                    <View style={styles.detailChip}>
+                      <Ionicons name="time-outline" size={12} color={colors.subtext} />
+                      <Text style={[styles.detailText, { color: colors.subtext }]}>{typeof a.estimated_arrival === 'number' ? `${Math.round(a.estimated_arrival)} min` : '—'}</Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.driverInfo}>
+                    <Ionicons name="person-outline" size={12} color={colors.subtext} />
+                    <Text style={[styles.driverText, { color: colors.subtext }]} numberOfLines={1}>
+                      {a.driver_name} • {a.driver_phone}
+                    </Text>
+                  </View>
+                </View>
+
+                <View style={styles.ambulanceActions}>
                   {lat != null && lng != null && (
                     <TouchableOpacity
-                      activeOpacity={0.85}
-                      style={[styles.callBtn, { backgroundColor: colors.border }]}
+                      activeOpacity={0.7}
+                      style={[styles.actionButton, { backgroundColor: colors.primary + '10' }]}
                       onPress={async () => {
-                        try {
-                          await openDirections(lat, lng);
-                        } catch {
-                          setErrorMessage('Cannot open Maps');
-                        }
+                        try { await openDirections(lat, lng); } catch { setErrorMessage('Cannot open Maps'); }
                       }}
                     >
-                      <Text style={[styles.callBtnText, { color: colors.text }]}>{directionsLabel}</Text>
+                      <Ionicons name="navigate-outline" size={20} color={colors.primary} />
                     </TouchableOpacity>
                   )}
-
                   <TouchableOpacity
-                    activeOpacity={0.85}
+                    activeOpacity={0.7}
                     disabled={busy || requestingId === a.ambulance_id || !coords}
-                    style={[styles.callBtn, { backgroundColor: busy ? colors.border : colors.primary }]}
+                    style={[styles.requestButton, { backgroundColor: busy ? colors.border : colors.danger }]}
                     onPress={() => requestSpecificAmbulance(a.ambulance_id)}
                   >
-                    <Text style={[styles.callBtnText, { color: '#ffffff' }]}>
-                      {requestingId === a.ambulance_id ? '...' : requestLabel}
-                    </Text>
+                    {requestingId === a.ambulance_id ? <ActivityIndicator color="#fff" size="small" /> : <Text style={styles.requestButtonText}>{requestLabel}</Text>}
                   </TouchableOpacity>
                 </View>
               </View>
             );
           })}
 
-          <Text style={[styles.note, { color: colors.subtext }]}>
-            {language === 'sinhala'
-              ? 'සටහන: ඉල්ලීම යවන විට ඔබගේ GPS ස්ථානය ඇතුළත් වේ.'
-              : language === 'tamil'
-                ? 'குறிப்பு: கோரிக்கை அனுப்பும்போது உங்கள் GPS இடம் சேர்க்கப்படும்.'
-                : 'Note: Your GPS location is included with the request.'}
-          </Text>
+          {ambulances.length === 0 && coords && (
+            <View style={styles.emptyState}>
+              <FontAwesome5 name="ambulance" size={48} color={colors.subtext + '30'} />
+              <Text style={[styles.emptyText, { color: colors.subtext }]}>No ambulances found nearby</Text>
+            </View>
+          )}
+
+          {!coords && !loading && permission !== 'granted' && (
+            <View style={styles.emptyState}>
+              <Ionicons name="location-outline" size={48} color={colors.subtext + '30'} />
+              <Text style={[styles.emptyText, { color: colors.subtext }]}>Enable location to see nearby ambulances</Text>
+            </View>
+          )}
+
+          <View style={styles.noteContainer}>
+            <Ionicons name="information-circle-outline" size={14} color={colors.subtext} />
+            <Text style={[styles.noteText, { color: colors.subtext }]}>Your GPS location is included with the request</Text>
+          </View>
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -445,140 +480,143 @@ export default function NearbyAmbulance({ accessToken, onBack }: NearbyAmbulance
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
+  container: { flex: 1 },
   headerRow: {
-    paddingHorizontal: 20,
-    paddingTop: 18,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    paddingBottom: 8,
     gap: 12,
   },
-  title: {
-    fontSize: 20,
-    fontWeight: '900',
+  backButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  backText: {
-    fontSize: 14,
-    fontWeight: '900',
+  title: {
+    fontSize: 28,
+    fontWeight: '700',
+    letterSpacing: -0.5,
   },
   subtitle: {
     paddingHorizontal: 20,
-    marginTop: 8,
-    fontSize: 13,
-    fontWeight: '700',
-    lineHeight: 18,
+    marginTop: 4,
+    marginBottom: 16,
+    fontSize: 14,
+    lineHeight: 20,
+    opacity: 0.8,
   },
-  heroCard: {
-    marginTop: 14,
+  // Location card - vertical layout
+  locationCard: {
     marginHorizontal: 20,
-    borderRadius: 18,
-    padding: 16,
+    marginBottom: 16,
+    borderRadius: 20,
     borderWidth: 1,
+    padding: 20,
+    gap: 16,
+  },
+  locationTopRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 16,
   },
-  heroTitle: {
-    fontSize: 15,
-    fontWeight: '900',
-    marginBottom: 4,
+  locationIconContainer: {
+    flexShrink: 0,
   },
-  heroSub: {
-    fontSize: 12,
-    fontWeight: '700',
-    lineHeight: 16,
-  },
-  primaryBtn: {
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
+  locationIconBg: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
     alignItems: 'center',
     justifyContent: 'center',
-    minWidth: 140,
   },
-  mapWrap: {
-    marginTop: 12,
-    height: 240,
-    borderRadius: 16,
-    overflow: 'hidden',
-    borderWidth: 1,
-  },
-  mapFallbackCenter: {
+  locationContent: {
     flex: 1,
+    gap: 4,
+  },
+  locationTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    lineHeight: 22,
+  },
+  locationSub: {
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  enableButton: {
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 12,
+    gap: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 40,
+    shadowColor: '#EF4444',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 3,
   },
-  primaryBtnText: {
-    color: '#ffffff',
-    fontSize: 12,
-    fontWeight: '900',
+  enableButtonText: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '600',
   },
-  sectionCard: {
-    marginTop: 14,
+  // Rest of styles (unchanged from previous correct version)
+  infoCard: {
     marginHorizontal: 20,
-    borderRadius: 18,
-    padding: 16,
+    marginBottom: 16,
+    borderRadius: 20,
     borderWidth: 1,
+    padding: 20,
   },
-  sectionHeader: {
+  cardHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 10,
+    marginBottom: 16,
   },
-  sectionTitle: {
-    fontSize: 15,
-    fontWeight: '900',
-  },
-  refreshBtn: {
-    borderWidth: 1,
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  refreshBtnText: {
-    fontSize: 12,
-    fontWeight: '900',
-  },
-  gpsText: {
-    fontSize: 12,
-    fontWeight: '700',
-    marginTop: 4,
-  },
-  itemRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    paddingVertical: 12,
-    borderTopWidth: 1,
-  },
-  itemTitle: {
-    fontSize: 13,
-    fontWeight: '900',
-  },
-  itemSub: {
-    marginTop: 3,
-    fontSize: 12,
-    fontWeight: '700',
-    lineHeight: 16,
-  },
-  callBtn: {
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-  },
-  callBtnText: {
-    fontSize: 12,
-    fontWeight: '900',
-  },
-  note: {
-    marginTop: 12,
-    fontSize: 12,
-    fontWeight: '700',
-    lineHeight: 16,
-  },
+  cardHeaderLeft: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  cardTitle: { fontSize: 16, fontWeight: '600' },
+  refreshButton: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 6, paddingHorizontal: 12, borderRadius: 20 },
+  refreshButtonText: { fontSize: 13, fontWeight: '500' },
+  gpsInfoGrid: { gap: 12 },
+  gpsRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 8 },
+  gpsLabel: { fontSize: 13, fontWeight: '500' },
+  gpsValue: { fontSize: 13, fontWeight: '500' },
+  permissionBadge: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  permissionDot: { width: 8, height: 8, borderRadius: 4 },
+  alertBox: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 16, padding: 12, borderRadius: 12 },
+  alertText: { flex: 1, fontSize: 13 },
+  mapCard: { marginHorizontal: 20, marginBottom: 16, borderRadius: 20, borderWidth: 1, padding: 20 },
+  mapTitle: { fontSize: 16, fontWeight: '600', marginBottom: 12 },
+  mapContainer: { height: 240, borderRadius: 16, overflow: 'hidden', borderWidth: 1 },
+  mapFallback: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 },
+  fallbackText: { fontSize: 14, textAlign: 'center' },
+  ambulanceCard: { marginHorizontal: 20, marginBottom: 16, borderRadius: 20, borderWidth: 1, padding: 20 },
+  ambulanceCount: { fontSize: 13, fontWeight: '600' },
+  ambulanceItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 16, gap: 16 },
+  ambulanceIconBg: { width: 52, height: 52, borderRadius: 26, alignItems: 'center', justifyContent: 'center' },
+  ambulanceInfo: { flex: 1, gap: 8 },
+  ambulanceHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 },
+  ambulanceNumber: { fontSize: 16, fontWeight: '600' },
+  statusBadge: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20 },
+  statusDot: { width: 6, height: 6, borderRadius: 3 },
+  statusText: { fontSize: 11, fontWeight: '600' },
+  ambulanceDetails: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  detailChip: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 12, backgroundColor: '#6B728015' },
+  detailText: { fontSize: 11, fontWeight: '500' },
+  driverInfo: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  driverText: { fontSize: 12, flex: 1 },
+  ambulanceActions: { gap: 8, alignItems: 'flex-end' },
+  actionButton: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
+  requestButton: { paddingVertical: 10, paddingHorizontal: 20, borderRadius: 24, minWidth: 80, alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4, elevation: 2 },
+  requestButtonText: { color: '#fff', fontSize: 14, fontWeight: '600' },
+  emptyState: { alignItems: 'center', justifyContent: 'center', paddingVertical: 40, gap: 16 },
+  emptyText: { fontSize: 14, textAlign: 'center' },
+  noteContainer: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 16, paddingTop: 16, borderTopWidth: 1, borderTopColor: '#E5E7EB' },
+  noteText: { fontSize: 12, textAlign: 'center' },
 });
