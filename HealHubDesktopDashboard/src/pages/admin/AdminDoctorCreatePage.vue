@@ -221,7 +221,7 @@ async function createDoctor() {
           <div class="field">
             <label class="flabel" for="fee">Consultation fee</label>
             <div class="input-wrap">
-              <span class="input-prefix">$</span>
+              <span class="input-prefix">LKR</span>
               <input id="fee" v-model="form.consultation_fee" inputmode="decimal" class="finput finput--prefix" placeholder="0.00" />
             </div>
           </div>

@@ -125,7 +125,7 @@ async function executeDelete() {
   }
 }
 
-const formatFee = (fee?: number) => fee != null ? `$${fee.toLocaleString()}` : '—'
+const formatFee = (fee?: number) => fee != null ? `LKR ${fee.toLocaleString()}` : '—'
 const formatDate = (d?: string) => d ? new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'
 
 onMounted(() => { consumeNotice(); load() })
@@ -209,11 +209,11 @@ onActivated(() => { consumeNotice(); load() })
             </div>
           </div>
           <div class="field">
-            <label class="flabel">Min Fee ($)</label>
+            <label class="flabel">Min Fee (LKR)</label>
             <input v-model="filters.min_fee" class="finput" inputmode="decimal" placeholder="0" />
           </div>
           <div class="field">
-            <label class="flabel">Max Fee ($)</label>
+            <label class="flabel">Max Fee (LKR)</label>
             <input v-model="filters.max_fee" class="finput" inputmode="decimal" placeholder="9999" />
           </div>
         </div>

@@ -312,7 +312,7 @@ const endTime   = computed(() => row.value?.is_available ? displayTime(row.value
               <div class="field-label">Consultation Fee</div>
               <div class="field-value field-value--fee">
                 <template v-if="row.consultation_fee != null">
-                  ${{ row.consultation_fee.toLocaleString() }}
+                  LKR {{ row.consultation_fee.toLocaleString() }}
                 </template>
                 <span v-else class="field-empty">—</span>
               </div>

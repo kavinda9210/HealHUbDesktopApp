@@ -168,6 +168,7 @@ class SupabaseClient:
             if operation == 'select':
                 columns = kwargs.pop('columns', kwargs.pop('select', '*'))
                 limit = kwargs.pop('limit', None)
+                offset = kwargs.pop('offset', None)
                 order_by = kwargs.pop('order_by', None)
                 order_desc = bool(kwargs.pop('order_desc', False))
                 extra_filters = kwargs.pop('filters', None)
@@ -199,7 +200,9 @@ class SupabaseClient:
 
                 if order_by:
                     query = query.order(order_by, desc=order_desc)
-                if limit is not None:
+                if offset is not None:
+                    query = query.range(int(offset), int(offset) + int(limit or 1000) - 1)
+                elif limit is not None:
                     query = query.limit(int(limit))
                 result = query.execute()
 

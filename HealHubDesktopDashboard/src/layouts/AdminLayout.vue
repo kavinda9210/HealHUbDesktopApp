@@ -38,11 +38,15 @@ initTheme()
 const isDoctorsOpen    = ref(route.path.startsWith('/admin/doctors'))
 const isPatientsOpen   = ref(route.path.startsWith('/admin/patients'))
 const isAmbulancesOpen = ref(route.path.startsWith('/admin/ambulances'))
+const isMedicinesOpen  = ref(route.path.startsWith('/admin/medicines'))
+const isSuppliersOpen  = ref(route.path.startsWith('/admin/suppliers'))
 
 watch(() => route.path, (path) => {
   if (path.startsWith('/admin/doctors'))    isDoctorsOpen.value    = true
   if (path.startsWith('/admin/patients'))   isPatientsOpen.value   = true
   if (path.startsWith('/admin/ambulances')) isAmbulancesOpen.value = true
+  if (path.startsWith('/admin/medicines'))  isMedicinesOpen.value  = true
+  if (path.startsWith('/admin/suppliers'))  isSuppliersOpen.value  = true
 })
 
 const pageTitle = computed(() => {
@@ -54,6 +58,10 @@ const pageTitle = computed(() => {
   if (p.includes('/patients'))            return 'Patients'
   if (p.includes('/ambulances/create'))   return 'Create Ambulance Staff'
   if (p.includes('/ambulances'))          return 'Ambulances'
+  if (p.includes('/medicines/create'))    return 'Add Medicine'
+  if (p.includes('/medicines'))           return 'Medicines'
+  if (p.includes('/suppliers/create'))    return 'Add Supplier'
+  if (p.includes('/suppliers'))           return 'Suppliers'
   if (p.includes('/notifications'))       return 'Notifications'
   if (p.includes('/profile'))             return 'My Profile'
   return 'HealHub'
@@ -222,6 +230,86 @@ function logout() {
                   <path d="M16 19h6M19 16v6"/>
                 </svg>
                 Add Staff
+              </router-link>
+            </div>
+          </Transition>
+        </div>
+
+        <!-- Medicines -->
+        <div class="nav-group">
+          <button
+            type="button"
+            class="nav-group-btn"
+            :class="{ 'is-open': isMedicinesOpen }"
+            :aria-expanded="isMedicinesOpen"
+            @click="isMedicinesOpen = !isMedicinesOpen"
+          >
+            <!-- Lucide: pill -->
+            <svg class="ni" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="6" cy="12" r="3"/>
+              <circle cx="18" cy="12" r="3"/>
+              <path d="M9 12h6"/>
+            </svg>
+            <span class="nav-label">Medicines</span>
+            <svg class="nav-chevron" :class="{ 'rotated': isMedicinesOpen }" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14">
+              <path d="M6 9l6 6 6-6"/>
+            </svg>
+          </button>
+          <Transition name="sub">
+            <div v-if="isMedicinesOpen" class="nav-sub">
+              <router-link class="nav-sub-link" to="/admin/medicines">
+                <svg class="si" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>
+                </svg>
+                Manage Medicines
+              </router-link>
+              <router-link class="nav-sub-link" to="/admin/medicines/create">
+                <svg class="si" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="12" cy="8" r="4"/>
+                  <path d="M20 21a8 8 0 10-16 0"/>
+                  <path d="M16 19h6M19 16v6"/>
+                </svg>
+                Add Medicine
+              </router-link>
+            </div>
+          </Transition>
+        </div>
+
+        <!-- Suppliers -->
+        <div class="nav-group">
+          <button
+            type="button"
+            class="nav-group-btn"
+            :class="{ 'is-open': isSuppliersOpen }"
+            :aria-expanded="isSuppliersOpen"
+            @click="isSuppliersOpen = !isSuppliersOpen"
+          >
+            <!-- Lucide: box -->
+            <svg class="ni" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/>
+              <polyline points="3.27 6.96 12 12.01 20.73 6.96"/>
+              <line x1="12" y1="22.08" x2="12" y2="12"/>
+            </svg>
+            <span class="nav-label">Suppliers</span>
+            <svg class="nav-chevron" :class="{ 'rotated': isSuppliersOpen }" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14">
+              <path d="M6 9l6 6 6-6"/>
+            </svg>
+          </button>
+          <Transition name="sub">
+            <div v-if="isSuppliersOpen" class="nav-sub">
+              <router-link class="nav-sub-link" to="/admin/suppliers">
+                <svg class="si" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>
+                </svg>
+                Manage Suppliers
+              </router-link>
+              <router-link class="nav-sub-link" to="/admin/suppliers/create">
+                <svg class="si" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="12" cy="8" r="4"/>
+                  <path d="M20 21a8 8 0 10-16 0"/>
+                  <path d="M16 19h6M19 16v6"/>
+                </svg>
+                Add Supplier
               </router-link>
             </div>
           </Transition>

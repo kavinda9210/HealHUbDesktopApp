@@ -51,6 +51,7 @@ def create_app(config_name='default'):
     from .routes.admin import admin_bp
     from .routes.doctor import doctor_bp
     from .routes.skin_disease import skin_disease_bp
+    from .routes.medicines import medicines_bp
 
     
     app.register_blueprint(auth_bp, url_prefix='/api/auth')
@@ -62,6 +63,7 @@ def create_app(config_name='default'):
     app.register_blueprint(admin_bp, url_prefix='/api/admin')
     app.register_blueprint(doctor_bp, url_prefix='/api/doctor')
     app.register_blueprint(skin_disease_bp, url_prefix='/api/skin-disease')
+    app.register_blueprint(medicines_bp, url_prefix='/api/medicines')
 
     
     # JWT configuration

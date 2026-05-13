@@ -204,3 +204,167 @@ class NearbyAmbulanceRequest(BaseModel):
     longitude: float = Field(..., ge=-180, le=180)
     radius_km: float = Field(10, gt=0, le=100)  # Default 10km radius, max 100km
     limit: int = Field(10, gt=0, le=50)  # Default 10 results, max 50
+
+# Supplier Models
+class SupplierCreate(BaseModel):
+    supplier_name: str = Field(..., min_length=2, max_length=255)
+    contact_person: Optional[str] = Field(None, max_length=255)
+    phone: Optional[str] = Field(None, max_length=20)
+    email: Optional[str] = None
+    address: Optional[str] = None
+    payment_terms: Optional[str] = Field(None, max_length=100)
+    status: str = Field(default='Active', pattern='^(Active|Inactive)$')
+
+class SupplierResponse(SupplierCreate):
+    supplier_id: int
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+    
+    class Config:
+        from_attributes = True
+
+# Medicine Models
+class MedicineCreate(BaseModel):
+    medicine_name: str = Field(..., min_length=2, max_length=255)
+    generic_name: Optional[str] = Field(None, max_length=255)
+    category: Optional[str] = Field(None, max_length=100)
+    dosage_form: Optional[str] = Field(None, max_length=100)
+    strength: Optional[str] = Field(None, max_length=100)
+    unit: Optional[str] = Field(None, max_length=50)
+    batch_no: Optional[str] = Field(None, max_length=100)
+    expiry_date: Optional[date] = None
+    quantity_in_stock: int = Field(default=0, ge=0)
+    min_quantity: int = Field(default=10, ge=0)
+    max_quantity: int = Field(default=500, ge=0)
+    unit_price: Optional[float] = Field(None, ge=0)
+    supplier_id: Optional[int] = None
+    location: Optional[str] = Field(None, max_length=100)
+    status: str = Field(default='Active', pattern='^(Active|Inactive|Discontinued)$')
+
+class MedicineResponse(MedicineCreate):
+    medicine_id: int
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+    
+    class Config:
+        from_attributes = True
+
+class MedicineSearchResult(BaseModel):
+    """Optimized response for search results"""
+    medicine_id: int
+    medicine_name: str
+    generic_name: Optional[str]
+    category: Optional[str]
+    dosage_form: Optional[str]
+    strength: Optional[str]
+    unit: Optional[str]
+    quantity_in_stock: int
+    min_quantity: int
+    status: str
+    is_low_stock: bool = False  # Calculated field
+
+# Prescription Models
+class PrescriptionCreate(BaseModel):
+    patient_id: int | str
+    doctor_id: int | str
+    appointment_id: Optional[int] = None
+    clinic_id: Optional[int] = None
+    notes: Optional[str] = None
+
+class PrescriptionResponse(PrescriptionCreate):
+    prescription_id: int
+    prescribed_at: datetime
+    is_active: bool
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+    
+    class Config:
+        from_attributes = True
+
+# Prescription Item Models
+class DurationTypeEnum(str, Enum):
+    DAY = "day"
+    WEEK = "week"
+    MONTH = "month"
+    CUSTOM = "custom"
+
+class FrequencyTypeEnum(str, Enum):
+    ONCE = "once"
+    TWICE = "twice"
+    THRICE = "thrice"
+    CUSTOM = "custom"
+
+class PrescriptionItemCreate(BaseModel):
+    prescription_id: Optional[int] = None
+    medicine_id: int
+    dosage: str = Field(..., min_length=1, max_length=100)
+    duration_type: DurationTypeEnum
+    duration_value: int = Field(..., ge=1)
+    frequency_type: FrequencyTypeEnum
+    times_per_day: Optional[int] = Field(None, ge=1, le=10)
+    specific_times: Optional[List[str]] = None  # Array of HH:MM format times
+    start_date: date
+    end_date: Optional[date] = None
+    next_clinic_date: Optional[date] = None
+    instructions: Optional[str] = None
+    
+    @validator('specific_times')
+    def validate_specific_times(cls, v):
+        if v:
+            if not isinstance(v, list):
+                raise ValueError('specific_times must be a list of time strings')
+            for time_str in v:
+                try:
+                    hours, minutes = map(int, time_str.split(':'))
+                    if not (0 <= hours <= 23 and 0 <= minutes <= 59):
+                        raise ValueError('Invalid time format')
+                except:
+                    raise ValueError(f'Invalid time format: {time_str}. Use HH:MM format.')
+        return v
+
+class PrescriptionItemResponse(PrescriptionItemCreate):
+    prescription_item_id: int
+    is_active: bool
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+    
+    class Config:
+        from_attributes = True
+
+class PrescriptionDetailResponse(PrescriptionResponse):
+    """Prescription with all its items"""
+    items: List[PrescriptionItemResponse] = []
+
+# Bulk Prescription Request Models
+class BulkSetDurationFrequencyRequest(BaseModel):
+    """Request to set duration and frequency for multiple medicines at once"""
+    prescription_item_ids: List[int] = Field(..., min_items=1)
+    duration_type: DurationTypeEnum
+    duration_value: int = Field(..., ge=1)
+    frequency_type: FrequencyTypeEnum
+    times_per_day: Optional[int] = Field(None, ge=1, le=10)
+    specific_times: Optional[List[str]] = None
+    start_date: date
+
+class CreatePrescriptionRequest(BaseModel):
+    """Request to create a complete prescription with multiple items"""
+    patient_id: int | str
+    doctor_id: int | str
+    appointment_id: Optional[int] = None
+    clinic_id: Optional[int] = None
+    notes: Optional[str] = None
+    items: List[PrescriptionItemCreate] = Field(..., min_items=1)
+
+class RecentMedicineResponse(BaseModel):
+    """Medicine from patient's recent history"""
+    medicine_id: int
+    medicine_name: str
+    generic_name: Optional[str]
+    category: Optional[str]
+    dosage_form: Optional[str]
+    strength: Optional[str]
+    unit: Optional[str]
+    quantity_in_stock: int
+    min_quantity: int
+    status: str
+    last_prescribed_date: datetime

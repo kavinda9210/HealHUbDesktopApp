@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { inject, onMounted, ref } from 'vue'
+import { inject, onMounted, onActivated, ref } from 'vue'
 import { api, ApiError } from '../../../lib/api'
 import { useAuthStore } from '../../../stores/auth'
 import { DoctorPatientContextKey } from './context'
@@ -50,6 +50,7 @@ async function loadMeds() {
 }
 
 onMounted(loadMeds)
+onActivated(loadMeds)
 </script>
 
 <template>

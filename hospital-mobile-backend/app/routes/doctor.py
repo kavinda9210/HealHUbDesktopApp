@@ -1314,20 +1314,131 @@ def doctor_list_patient_medications(patient_id: int):
         page = max(1, int(request.args.get('page', 1)))
         page_size = int(request.args.get('page_size', 25))
         page_size = min(max(5, page_size), 100)
-        offset = (page - 1) * page_size
 
         client = SupabaseClient.get_client()
-        q = client.table('patient_medications').select(
-            'medication_id,patient_id,doctor_id,medicine_name,dosage,frequency,times_per_day,specific_times,start_date,end_date,next_clinic_date,is_active,notes,prescribed_at,doctors(full_name,specialization)',
-            count='exact',
-        ).eq('patient_id', patient_id).order('prescribed_at', desc=True).range(offset, offset + page_size - 1)
 
-        res = q.execute()
-        count = getattr(res, 'count', None)
-        if count is None:
-            count = len(res.data) if res.data else 0
+        direct_res = (
+            client.table('patient_medications')
+            .select(
+                'medication_id,patient_id,doctor_id,medicine_name,dosage,frequency,times_per_day,specific_times,start_date,end_date,next_clinic_date,is_active,notes,prescribed_at',
+                count='exact',
+            )
+            .eq('patient_id', patient_id)
+            .order('prescribed_at', desc=True)
+            .execute()
+        )
 
-        return jsonify({'success': True, 'data': res.data or [], 'count': count, 'page': page, 'page_size': page_size}), 200
+        combined: list[dict] = []
+
+        doctor_cache: dict[str, dict] = {}
+        current_doctor = _get_doctor_row(current_user_id)
+        if current_doctor:
+            doctor_cache[str(current_user_id)] = current_doctor
+
+        for row in direct_res.data or []:
+            doctor_row = doctor_cache.get(str(row.get('doctor_id')))
+            if doctor_row is None and row.get('doctor_id') is not None:
+                lookup = SupabaseClient.execute_query('doctors', 'select', filter_doctor_id=row.get('doctor_id'), limit=1)
+                if lookup.get('success') and lookup.get('data'):
+                    doctor_row = lookup['data'][0]
+                    doctor_cache[str(row.get('doctor_id'))] = doctor_row
+
+            combined.append({
+                **row,
+                'doctors': {
+                    'full_name': (doctor_row or {}).get('full_name'),
+                    'specialization': (doctor_row or {}).get('specialization'),
+                } if doctor_row else None,
+            })
+
+        # Also include prescription-derived medicines so they appear even if the sync table insert is missing.
+        patient_user_id = patient.get('user_id')
+        if patient_user_id:
+            pres_rows = (
+                client.table('prescriptions')
+                .select('prescription_id,prescribed_at,doctor_id,patient_id')
+                .eq('patient_id', patient_user_id)
+                .order('prescribed_at', desc=True)
+                .execute()
+            )
+
+            prescription_ids = [r.get('prescription_id') for r in (pres_rows.data or []) if r.get('prescription_id') is not None]
+            prescriptions_by_id = {str(r.get('prescription_id')): r for r in (pres_rows.data or []) if r.get('prescription_id') is not None}
+
+            med_lookup: dict[str, str] = {}
+            med_ids: list[int] = []
+
+            if prescription_ids:
+                item_rows = (
+                    client.table('prescription_items')
+                    .select('prescription_item_id,prescription_id,medicine_id,dosage,duration_type,duration_value,frequency_type,times_per_day,specific_times,start_date,end_date,next_clinic_date,instructions,is_active,created_at')
+                    .in_('prescription_id', [int(x) for x in prescription_ids])
+                    .order('created_at', desc=True)
+                    .execute()
+                )
+
+                for row in item_rows.data or []:
+                    medicine_id = row.get('medicine_id')
+                    if medicine_id is not None:
+                        med_ids.append(int(medicine_id))
+
+                if med_ids:
+                    med_res = SupabaseClient.execute_admin_query(
+                        'medicines',
+                        operation='select',
+                        columns='medicine_id, medicine_name',
+                        filter_medicine_id=('in', list(set(med_ids))),
+                    )
+                    for row in med_res.get('data') or []:
+                        if isinstance(row, dict) and row.get('medicine_id') is not None:
+                            med_lookup[str(row['medicine_id'])] = str(row.get('medicine_name') or '').strip()
+
+                for row in item_rows.data or []:
+                    presc = prescriptions_by_id.get(str(row.get('prescription_id')))
+                    presc_doctor_id = (presc or {}).get('doctor_id')
+                    doctor_row = None
+                    if presc_doctor_id is not None:
+                        doctor_row = doctor_cache.get(str(presc_doctor_id))
+                        if doctor_row is None:
+                            lookup = SupabaseClient.execute_query('doctors', 'select', filter_user_id=presc_doctor_id, limit=1)
+                            if lookup.get('success') and lookup.get('data'):
+                                doctor_row = lookup['data'][0]
+                                doctor_cache[str(presc_doctor_id)] = doctor_row
+
+                    specific_times = row.get('specific_times')
+                    if isinstance(specific_times, str):
+                        try:
+                            specific_times = json.loads(specific_times)
+                        except Exception:
+                            specific_times = [specific_times]
+
+                    combined.append({
+                        'medication_id': row.get('prescription_item_id'),
+                        'patient_id': patient_id,
+                        'doctor_id': doctor_row.get('doctor_id') if doctor_row else None,
+                        'medicine_name': med_lookup.get(str(row.get('medicine_id'))) or f"Medicine {row.get('medicine_id')}",
+                        'dosage': row.get('dosage'),
+                        'frequency': row.get('frequency_type') or 'Daily',
+                        'times_per_day': row.get('times_per_day') or (len(specific_times) if isinstance(specific_times, list) else 1),
+                        'specific_times': specific_times,
+                        'start_date': row.get('start_date'),
+                        'end_date': row.get('end_date'),
+                        'next_clinic_date': row.get('next_clinic_date'),
+                        'is_active': row.get('is_active', True),
+                        'notes': row.get('instructions'),
+                        'prescribed_at': (presc or {}).get('prescribed_at') or row.get('created_at'),
+                        'doctors': {
+                            'full_name': (doctor_row or {}).get('full_name'),
+                            'specialization': (doctor_row or {}).get('specialization'),
+                        } if doctor_row else None,
+                    })
+
+        combined.sort(key=lambda r: str(r.get('prescribed_at') or ''), reverse=True)
+        count = len(combined)
+        offset = (page - 1) * page_size
+        data = combined[offset: offset + page_size]
+
+        return jsonify({'success': True, 'data': data, 'count': count, 'page': page, 'page_size': page_size}), 200
 
     except Exception as e:
         logger.error(f"Doctor list medications error: {e}")
