@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Animated, Easing } from 'react-native';
 import { useTheme } from '../../context/ThemeContext';
 import { useLanguage } from '../../context/LanguageContext';
 import {
@@ -36,6 +36,16 @@ export default function AlarmToneSettingsCard() {
   const soundRef = useRef<any>(null);
   const [previewSupported, setPreviewSupported] = useState<boolean>(true);
   const [previewError, setPreviewError] = useState<string>('');
+
+  // Animation values for each tone
+  const animationsRef = useRef<Map<AlarmToneId, Animated.Value>>(new Map());
+  
+  const getOrCreateAnimation = (toneId: AlarmToneId) => {
+    if (!animationsRef.current.has(toneId)) {
+      animationsRef.current.set(toneId, new Animated.Value(1));
+    }
+    return animationsRef.current.get(toneId)!;
+  };
 
   const tones = useMemo(() => listAlarmTones(), []);
 
@@ -278,6 +288,16 @@ export default function AlarmToneSettingsCard() {
         soundRef.current = null;
       }
     } finally {
+      // Stop and reset pulse animation
+      if (playing) {
+        const anim = getOrCreateAnimation(playing);
+        Animated.timing(anim, {
+          toValue: 1,
+          duration: 300,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: false,
+        }).start();
+      }
       setPlaying(null);
     }
   };
@@ -306,6 +326,25 @@ export default function AlarmToneSettingsCard() {
       const { sound } = await Audio.Sound.createAsync(tone.asset, { shouldPlay: true, volume: 1.0 });
       soundRef.current = sound;
       setPlaying(toneId);
+
+      // Start pulse animation
+      const anim = getOrCreateAnimation(toneId);
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(anim, {
+            toValue: 1.1,
+            duration: 500,
+            easing: Easing.inOut(Easing.ease),
+            useNativeDriver: false,
+          }),
+          Animated.timing(anim, {
+            toValue: 1,
+            duration: 500,
+            easing: Easing.inOut(Easing.ease),
+            useNativeDriver: false,
+          }),
+        ]),
+      ).start();
 
       sound.setOnPlaybackStatusUpdate((status: any) => {
         if (!status.isLoaded) return;
@@ -336,15 +375,22 @@ export default function AlarmToneSettingsCard() {
         {tones.map((t) => {
           const isSelected = t.id === current;
           const isPlaying = t.id === playing;
+          const scaleAnim = getOrCreateAnimation(t.id);
 
           return (
-            <View
+            <Animated.View
               key={t.id}
               style={[
                 styles.toneRow,
                 {
                   borderColor: isSelected ? colors.primary : colors.border,
-                  backgroundColor: colors.background === '#ffffff' && isSelected ? '#f0f9ff' : 'transparent',
+                  backgroundColor:
+                    isPlaying && colors.background === '#ffffff'
+                      ? '#fef3c7'
+                      : colors.background === '#ffffff' && isSelected
+                        ? '#f0f9ff'
+                        : 'transparent',
+                  transform: [{ scale: scaleAnim }],
                 },
               ]}
             >
@@ -367,29 +413,51 @@ export default function AlarmToneSettingsCard() {
                 </Text>
               </View>
 
+              {/* Play/Stop Button with Icon */}
               <TouchableOpacity
-                activeOpacity={0.85}
+                activeOpacity={0.75}
                 onPress={() => (isPlaying ? void stopPreviewAsync() : void playPreviewAsync(t.id))}
-                style={[styles.smallBtn, { borderColor: colors.border }]}
+                style={[
+                  styles.smallBtn,
+                  {
+                    borderColor: isPlaying ? colors.primary : colors.border,
+                    backgroundColor: isPlaying ? colors.primary + '20' : 'transparent',
+                  },
+                ]}
                 accessibilityRole="button"
                 accessibilityLabel={isPlaying ? stopLabel : playLabel}
               >
-                <Text style={[styles.smallBtnText, { color: colors.subtext }]}>{isPlaying ? stopLabel : playLabel}</Text>
+                <Text style={[styles.smallBtnIcon]}>
+                  {isPlaying ? '⏹️' : '▶️'}
+                </Text>
+                <Text style={[styles.smallBtnText, { color: isPlaying ? colors.primary : colors.subtext }]}>
+                  {isPlaying ? stopLabel : playLabel}
+                </Text>
               </TouchableOpacity>
 
+              {/* Select/Selected Button with Icon */}
               <TouchableOpacity
-                activeOpacity={0.85}
+                activeOpacity={0.75}
                 disabled={isSelected}
                 onPress={() => void setToneForTargetAsync(target, t.id)}
-                style={[styles.smallBtn, { borderColor: isSelected ? colors.primary : colors.border }]}
+                style={[
+                  styles.smallBtn,
+                  {
+                    borderColor: isSelected ? colors.primary : colors.border,
+                    backgroundColor: isSelected ? colors.primary + '20' : 'transparent',
+                  },
+                ]}
                 accessibilityRole="button"
                 accessibilityLabel={isSelected ? selectedLabel : selectLabel}
               >
+                <Text style={[styles.smallBtnIcon]}>
+                  {isSelected ? '✓' : ' '}
+                </Text>
                 <Text style={[styles.smallBtnText, { color: isSelected ? colors.primary : colors.subtext }]}>
                   {isSelected ? selectedLabel : selectLabel}
                 </Text>
               </TouchableOpacity>
-            </View>
+            </Animated.View>
           );
         })}
       </View>
@@ -401,72 +469,65 @@ export default function AlarmToneSettingsCard() {
 
   return (
     <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
-      <Text style={[styles.title, { color: colors.text }]}>{title}</Text>
+      <View style={styles.header}>
+        <Text style={[styles.title, { color: colors.text }]}>🔔 {title}</Text>
+        <Text style={[styles.subtitle, { color: colors.subtext }]}>{language === 'sinhala' ? 'සතර්කතා සැකසුම්' : language === 'tamil' ? 'எச்சரிக்கை அமைப்புகள்' : 'Alarm preferences'}</Text>
+      </View>
 
       <View style={[styles.modeCard, { borderColor: colors.border }]}> 
-        <Text style={[styles.modeTitle, { color: colors.text }]}>{ringingModeTitle}</Text>
+        <Text style={[styles.modeTitle, { color: colors.text }]}>📳 {ringingModeTitle}</Text>
         <View style={styles.modeRow}>
           <TouchableOpacity
-            activeOpacity={0.85}
+            activeOpacity={0.75}
             onPress={() => void setVibrationOnlyAsync(false)}
             style={[
               styles.modeOption,
               {
                 borderColor: !vibrationOnly ? colors.primary : colors.border,
-                backgroundColor: !vibrationOnly ? (colors.background === '#ffffff' ? '#f0f9ff' : '#0b2a22') : 'transparent',
+                backgroundColor: !vibrationOnly ? colors.primary + '15' : colors.background,
               },
             ]}
             accessibilityRole="button"
             accessibilityLabel={soundAndVibrateLabel}
           >
-            <Text style={[styles.modeOptionText, { color: !vibrationOnly ? colors.primary : colors.subtext }]}>
+            <Text style={[styles.modeOptionEmoji]}>🔊</Text>
+            <Text style={[styles.modeOptionText, { color: !vibrationOnly ? colors.primary : colors.subtext, fontWeight: !vibrationOnly ? '700' : '600' }]}>
               {soundAndVibrateLabel}
             </Text>
           </TouchableOpacity>
 
           <TouchableOpacity
-            activeOpacity={0.85}
+            activeOpacity={0.75}
             onPress={() => void setVibrationOnlyAsync(true)}
             style={[
               styles.modeOption,
               {
                 borderColor: vibrationOnly ? colors.primary : colors.border,
-                backgroundColor: vibrationOnly ? (colors.background === '#ffffff' ? '#f0f9ff' : '#0b2a22') : 'transparent',
+                backgroundColor: vibrationOnly ? colors.primary + '15' : colors.background,
               },
             ]}
             accessibilityRole="button"
             accessibilityLabel={vibrateOnlyLabel}
           >
-            <Text style={[styles.modeOptionText, { color: vibrationOnly ? colors.primary : colors.subtext }]}>
+            <Text style={[styles.modeOptionEmoji]}>📳</Text>
+            <Text style={[styles.modeOptionText, { color: vibrationOnly ? colors.primary : colors.subtext, fontWeight: vibrationOnly ? '700' : '600' }]}>
               {vibrateOnlyLabel}
             </Text>
           </TouchableOpacity>
         </View>
       </View>
 
-      {__DEV__ && (
-        <View style={[styles.testCard, { borderColor: colors.border }]}> 
-          <Text style={[styles.testNote, { color: colors.subtext }]}>{testNoteLabel}</Text>
-          <TouchableOpacity
-            activeOpacity={0.85}
-            onPress={() => void scheduleDevTestRingAsync()}
-            style={[styles.testBtn, { borderColor: colors.primary }]}
-            accessibilityRole="button"
-            accessibilityLabel={testRingingLabel}
-          >
-            <Text style={[styles.testBtnText, { color: colors.primary }]}>{testRingingLabel}</Text>
-          </TouchableOpacity>
-        </View>
-      )}
+
 
       <TouchableOpacity
-        activeOpacity={0.85}
+        activeOpacity={0.75}
         onPress={() => setExpanded((v) => (v === 'medicine' ? null : 'medicine'))}
         style={[styles.selectorRow, { borderColor: colors.border }]}
         accessibilityRole="button"
         accessibilityLabel={medicineLabel}
       >
         <View style={{ flex: 1 }}>
+          <Text style={[styles.selectorEmoji]}>💊</Text>
           <Text style={[styles.selectorTitle, { color: colors.text }]}>{medicineLabel}</Text>
           <Text style={[styles.selectorValue, { color: colors.subtext }]}>{currentMedicineLabel}</Text>
         </View>
@@ -476,13 +537,14 @@ export default function AlarmToneSettingsCard() {
       {expanded === 'medicine' && renderToneList('medicine')}
 
       <TouchableOpacity
-        activeOpacity={0.85}
+        activeOpacity={0.75}
         onPress={() => setExpanded((v) => (v === 'clinic' ? null : 'clinic'))}
         style={[styles.selectorRow, { borderColor: colors.border, marginTop: 12 }]}
         accessibilityRole="button"
         accessibilityLabel={clinicLabel}
       >
         <View style={{ flex: 1 }}>
+          <Text style={[styles.selectorEmoji]}>🏥</Text>
           <Text style={[styles.selectorTitle, { color: colors.text }]}>{clinicLabel}</Text>
           <Text style={[styles.selectorValue, { color: colors.subtext }]}>{currentClinicLabel}</Text>
         </View>
@@ -509,24 +571,34 @@ export default function AlarmToneSettingsCard() {
 const styles = StyleSheet.create({
   card: {
     borderWidth: 1,
-    borderRadius: 18,
-    padding: 16,
+    borderRadius: 22,
+    padding: 18,
+  },
+  header: {
+    marginBottom: 16,
   },
   title: {
-    fontSize: 15,
+    fontSize: 16,
     fontWeight: '900',
-    marginBottom: 12,
+    marginBottom: 4,
+    letterSpacing: 0.3,
+  },
+  subtitle: {
+    fontSize: 12,
+    fontWeight: '500',
+    opacity: 0.7,
   },
   modeCard: {
     borderWidth: 1,
-    borderRadius: 14,
-    padding: 12,
-    marginBottom: 12,
+    borderRadius: 16,
+    padding: 14,
+    marginBottom: 16,
   },
   modeTitle: {
     fontSize: 13,
-    fontWeight: '900',
-    marginBottom: 10,
+    fontWeight: '800',
+    marginBottom: 12,
+    letterSpacing: 0.2,
   },
   modeRow: {
     flexDirection: 'row',
@@ -534,16 +606,21 @@ const styles = StyleSheet.create({
   },
   modeOption: {
     flex: 1,
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderRadius: 14,
-    paddingVertical: 10,
+    paddingVertical: 12,
     paddingHorizontal: 10,
     alignItems: 'center',
     justifyContent: 'center',
+    gap: 4,
+  },
+  modeOptionEmoji: {
+    fontSize: 18,
   },
   modeOptionText: {
     fontSize: 12,
-    fontWeight: '900',
+    fontWeight: '700',
+    letterSpacing: 0.1,
   },
   testCard: {
     borderWidth: 1,
@@ -569,28 +646,35 @@ const styles = StyleSheet.create({
     fontWeight: '900',
   },
   selectorRow: {
-    borderWidth: 1,
-    borderRadius: 14,
-    padding: 12,
+    borderWidth: 1.5,
+    borderRadius: 16,
+    paddingVertical: 14,
+    paddingHorizontal: 14,
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     gap: 10,
+  },
+  selectorEmoji: {
+    fontSize: 18,
+    marginBottom: 4,
   },
   selectorTitle: {
     fontSize: 13,
-    fontWeight: '900',
+    fontWeight: '800',
+    letterSpacing: 0.1,
   },
   selectorValue: {
-    marginTop: 4,
     fontSize: 12,
-    fontWeight: '700',
+    fontWeight: '600',
+    marginTop: 3,
   },
   chev: {
     fontSize: 16,
     fontWeight: '900',
   },
   toneRow: {
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderRadius: 14,
     padding: 12,
     flexDirection: 'row',
@@ -599,18 +683,26 @@ const styles = StyleSheet.create({
   },
   toneName: {
     fontSize: 13,
-    fontWeight: '900',
+    fontWeight: '800',
+    letterSpacing: 0.1,
   },
   toneSub: {
     marginTop: 3,
     fontSize: 11,
-    fontWeight: '700',
+    fontWeight: '600',
   },
   smallBtn: {
     borderWidth: 1,
     borderRadius: 999,
     paddingHorizontal: 12,
     paddingVertical: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  smallBtnIcon: {
+    fontSize: 14,
+    fontWeight: '900',
   },
   smallBtnText: {
     fontSize: 12,

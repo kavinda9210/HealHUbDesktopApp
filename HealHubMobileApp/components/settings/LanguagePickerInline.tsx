@@ -21,7 +21,10 @@ export default function LanguagePickerInline() {
 
   return (
     <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
-      <Text style={[styles.title, { color: colors.text }]}>{title}</Text>
+      <View style={styles.header}>
+        <Text style={[styles.title, { color: colors.text }]}>🌐 {title}</Text>
+        <Text style={[styles.subtitle, { color: colors.subtext }]}>{language === 'sinhala' ? 'භාෂා තෝරන්න' : language === 'tamil' ? 'மொழியைத் தேர்வு செய்யவும்' : 'Select your language'}</Text>
+      </View>
       <View style={styles.row}>
         {options.map((o) => {
           const active = o.key === language;
@@ -29,16 +32,16 @@ export default function LanguagePickerInline() {
             <TouchableOpacity
               key={o.key}
               onPress={() => setLanguage(o.key)}
-              activeOpacity={0.85}
+              activeOpacity={0.75}
               style={[
                 styles.pill,
                 {
                   borderColor: active ? colors.primary : colors.border,
-                  backgroundColor: active ? (colors.background === '#ffffff' ? '#f0f9ff' : '#0b2a22') : 'transparent',
+                  backgroundColor: active ? colors.primary + '15' : colors.background,
                 },
               ]}
             >
-              <Text style={[styles.pillText, { color: active ? colors.primary : colors.subtext }]}>{o.label}</Text>
+              <Text style={[styles.pillText, { color: active ? colors.primary : colors.subtext, fontWeight: active ? '700' : '600' }]}>{o.label}</Text>
             </TouchableOpacity>
           );
         })}
@@ -50,27 +53,37 @@ export default function LanguagePickerInline() {
 const styles = StyleSheet.create({
   card: {
     borderWidth: 1,
-    borderRadius: 18,
-    padding: 16,
+    borderRadius: 22,
+    padding: 18,
+  },
+  header: {
+    marginBottom: 16,
   },
   title: {
-    fontSize: 15,
+    fontSize: 16,
     fontWeight: '900',
-    marginBottom: 12,
+    marginBottom: 4,
+    letterSpacing: 0.3,
+  },
+  subtitle: {
+    fontSize: 12,
+    fontWeight: '500',
+    opacity: 0.7,
   },
   row: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 10,
+    gap: 8,
   },
   pill: {
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderRadius: 999,
-    paddingHorizontal: 12,
+    paddingHorizontal: 14,
     paddingVertical: 10,
   },
   pillText: {
     fontSize: 13,
-    fontWeight: '800',
+    fontWeight: '700',
+    letterSpacing: 0.2,
   },
 });

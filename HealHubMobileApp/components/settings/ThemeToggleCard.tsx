@@ -27,49 +27,46 @@ export default function ThemeToggleCard() {
 
   return (
     <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
-      <Text style={[styles.title, { color: colors.text }]}>{title}</Text>
+      <View style={styles.header}>
+        <Text style={[styles.title, { color: colors.text }]}>🎨 {title}</Text>
+        <Text style={[styles.subtitle, { color: colors.subtext }]}>{language === 'sinhala' ? 'ඔබේ තේමාව තෝරන්න' : language === 'tamil' ? 'உங்கள் தீம் தேர்வு செய்யவும்' : 'Choose your theme'}</Text>
+      </View>
 
       <View style={styles.row}>
         <TouchableOpacity
-          activeOpacity={0.85}
+          activeOpacity={0.75}
           onPress={() => setMode('light')}
           style={[
             styles.option,
             {
               borderColor: mode === 'light' ? colors.primary : colors.border,
-              backgroundColor: mode === 'light' ? (colors.background === '#ffffff' ? '#f0f9ff' : '#0b2a22') : 'transparent',
+              backgroundColor: mode === 'light' ? colors.primary + '15' : colors.background,
             },
           ]}
         >
-          <Text style={[styles.optionText, { color: mode === 'light' ? colors.primary : colors.subtext }]}>
-            ☀️ {lightLabel}
+          <Text style={[styles.emoji]}>☀️</Text>
+          <Text style={[styles.optionText, { color: mode === 'light' ? colors.primary : colors.subtext, fontWeight: mode === 'light' ? '700' : '600' }]}>
+            {lightLabel}
           </Text>
         </TouchableOpacity>
 
         <TouchableOpacity
-          activeOpacity={0.85}
+          activeOpacity={0.75}
           onPress={() => setMode('dark')}
           style={[
             styles.option,
             {
               borderColor: mode === 'dark' ? colors.primary : colors.border,
-              backgroundColor: mode === 'dark' ? (colors.background === '#ffffff' ? '#f0f9ff' : '#0b2a22') : 'transparent',
+              backgroundColor: mode === 'dark' ? colors.primary + '15' : colors.background,
             },
           ]}
         >
-          <Text style={[styles.optionText, { color: mode === 'dark' ? colors.primary : colors.subtext }]}>
-            🌙 {darkLabel}
+          <Text style={[styles.emoji]}>🌙</Text>
+          <Text style={[styles.optionText, { color: mode === 'dark' ? colors.primary : colors.subtext, fontWeight: mode === 'dark' ? '700' : '600' }]}>
+            {darkLabel}
           </Text>
         </TouchableOpacity>
       </View>
-
-      <Text style={[styles.note, { color: colors.subtext }]}>
-        {language === 'sinhala'
-          ? 'මෙය UI/තේමා ඩෙමෝවක්. වෙනත් තිර වලටත් අවශ්‍ය ලෙස යොදන්න.'
-          : language === 'tamil'
-            ? 'இது UI/தீம் டெமோ. தேவையான திரைகளில் பயன்படுத்தலாம்.'
-            : 'UI/theme demo. Apply to more screens as needed.'}
-      </Text>
     </View>
   );
 }
@@ -77,34 +74,43 @@ export default function ThemeToggleCard() {
 const styles = StyleSheet.create({
   card: {
     borderWidth: 1,
-    borderRadius: 18,
-    padding: 16,
+    borderRadius: 22,
+    padding: 18,
+  },
+  header: {
+    marginBottom: 16,
   },
   title: {
-    fontSize: 15,
+    fontSize: 16,
     fontWeight: '900',
-    marginBottom: 12,
+    marginBottom: 4,
+    letterSpacing: 0.3,
+  },
+  subtitle: {
+    fontSize: 12,
+    fontWeight: '500',
+    opacity: 0.7,
   },
   row: {
     flexDirection: 'row',
-    gap: 12,
+    gap: 10,
   },
   option: {
     flex: 1,
-    borderWidth: 1,
-    borderRadius: 14,
-    paddingVertical: 12,
+    borderWidth: 1.5,
+    borderRadius: 16,
+    paddingVertical: 16,
+    paddingHorizontal: 12,
     alignItems: 'center',
     justifyContent: 'center',
+    gap: 8,
+  },
+  emoji: {
+    fontSize: 24,
   },
   optionText: {
     fontSize: 13,
-    fontWeight: '900',
-  },
-  note: {
-    marginTop: 12,
-    fontSize: 12,
-    fontWeight: '600',
-    lineHeight: 16,
+    fontWeight: '700',
+    letterSpacing: 0.2,
   },
 });

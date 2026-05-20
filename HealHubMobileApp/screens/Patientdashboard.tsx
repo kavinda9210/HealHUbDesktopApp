@@ -629,6 +629,33 @@ export default function Patientdashboard({
     });
   };
 
+  const handleDeleteAccount = async () => {
+    try {
+      if (!accessToken) {
+        showReminderToast('error', language === 'sinhala' ? 'සත්‍යාපිතයි නැත' : language === 'tamil' ? 'சான்றளிக்கப்படவில்லை' : 'Not authenticated');
+        return;
+      }
+
+      const res = await apiPost<any>('/api/patient/account/delete', {}, accessToken);
+      
+      if (!res.ok || !res.data?.success) {
+        const msg = (res.data && (res.data.message || res.data.error)) || 'Failed to delete account';
+        showReminderToast('error', String(msg));
+        return;
+      }
+
+      showReminderToast('success', language === 'sinhala' ? 'ගිණුම සාර්ථකව මකා දැමුණු' : language === 'tamil' ? 'கணக்கு வெற்றிகரமாக நீக்கப்பட்டது' : 'Account deleted successfully');
+      
+      // Delay before logout to show toast
+      setTimeout(() => {
+        if (onLogout) onLogout();
+      }, 1500);
+    } catch (error) {
+      console.error('handleDeleteAccount failed:', error);
+      showReminderToast('error', language === 'sinhala' ? 'ගිණුම මකා ඩයිමට අසමත් විය' : language === 'tamil' ? 'கணக்குநீக்க தோல்வி' : 'Failed to delete account');
+    }
+  };
+
   return (
     <SafeAreaView style={[modernStyles.container, { backgroundColor: colors.background }]} edges={['top', 'bottom']}>
       <StatusBar barStyle={mode === 'dark' ? 'light-content' : 'dark-content'} backgroundColor={colors.background} translucent={false} />
@@ -863,7 +890,7 @@ export default function Patientdashboard({
             <LanguagePickerInline />
             <ThemeToggleCard />
             <AlarmToneSettingsCard />
-            <DeleteAccountCard />
+            <DeleteAccountCard onDelete={handleDeleteAccount} />
           </ScrollView>
         )}
       </View>

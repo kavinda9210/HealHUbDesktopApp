@@ -77,13 +77,7 @@ export default function EmailChangeVerificationCard({ pendingEmail, onVerified, 
         )}
       </View>
 
-      <Text style={[styles.note, { color: colors.subtext }]}>
-        {language === 'sinhala'
-          ? 'සටහන: මෙය UI පමණි. පසුව API/OTP සත්‍යාපනය එක් කළ හැක.'
-          : language === 'tamil'
-            ? 'குறிப்பு: இது UI மட்டும். பின்னர் OTP/API சேர்க்கலாம்.'
-            : 'Note: UI only. We can add OTP/API later.'}
-      </Text>
+
     </View>
   );
 }
