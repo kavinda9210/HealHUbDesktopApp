@@ -24,7 +24,7 @@ export default function CustomSplash({ children, isAppReady }: CustomSplashProps
     return (
       <View style={styles.container}>
         <Image 
-          source={require('../assets/splash.png')} 
+          source={require('../assets/HealHub_icon.png')} 
           style={styles.image}
           resizeMode="contain"
         />
@@ -43,7 +43,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   } as ViewStyle,
   image: {
-    width: '80%',
-    height: '80%',
+    width: 180,
+    height: 180,
   } as ImageStyle,
 });

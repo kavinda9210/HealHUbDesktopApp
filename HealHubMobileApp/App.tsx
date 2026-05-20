@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 
-import { View, StyleSheet } from 'react-native';
+import { BackHandler, View, StyleSheet, Platform } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import * as SplashScreen from 'expo-splash-screen';
 import { LanguageProvider } from './context/LanguageContext';
@@ -36,6 +36,7 @@ import { stopAmbulanceBackgroundLocationAsync } from './utils/ambulanceBackgroun
 import { setShareEnabled } from './utils/ambulanceLocationStorage';
 
 type PatientTabKey = 'home' | 'appointment' | 'medicine' | 'clinic' | 'reports' | 'profile';
+type Screen = 'native-splash' | 'custom-splash' | 'language' | 'intro' | 'login' | 'forgot-password' | 'verification' | 'register' | 'email-verification' | 'patient-dashboard' | 'ai-detect' | 'directions' | 'notifications' | 'nearby-ambulance' | 'ambulance-dashboard' | 'main';
 
 console.log('[App] App.tsx module loaded');
 
@@ -64,7 +65,8 @@ export default function AppWrapper() {
 }
 
 function ForceNativeSplashApp() {
-  const [screen, setScreen] = useState<'native-splash' | 'custom-splash' | 'language' | 'intro' | 'login' | 'forgot-password' | 'verification' | 'register' | 'email-verification' | 'patient-dashboard' | 'ai-detect' | 'directions' | 'notifications' | 'nearby-ambulance' | 'ambulance-dashboard' | 'main'>('native-splash');
+  const [screen, setScreen] = useState<Screen>('native-splash');
+  const [screenHistory, setScreenHistory] = useState<Screen[]>([]);
 
   const [directionsParams, setDirectionsParams] = useState<null | {
     backScreen: 'ai-detect' | 'patient-dashboard';
@@ -72,7 +74,7 @@ function ForceNativeSplashApp() {
     destination: { lat: number; lng: number };
     destinationName?: string;
   }>(null);
-  const splashTimer = useRef<NodeJS.Timeout | null>(null);
+  const splashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [resetEmail, setResetEmail] = useState<string>('');
   const [registerEmail, setRegisterEmail] = useState<string>('');
   const [accessToken, setAccessToken] = useState<string>('');
@@ -93,6 +95,28 @@ function ForceNativeSplashApp() {
   const [pendingScreenAfterAuth, setPendingScreenAfterAuth] = useState<
     null | 'patient-dashboard' | 'notifications' | 'ai-detect' | 'nearby-ambulance'
   >(null);
+
+  const navigateTo = (nextScreen: Screen) => {
+    setScreen((current) => {
+      if (current === nextScreen) return current;
+      setScreenHistory((history) => [...history, current]);
+      return nextScreen;
+    });
+  };
+
+  const resetNavigation = (nextScreen: Screen) => {
+    setScreenHistory([]);
+    setScreen(nextScreen);
+  };
+
+  const goBack = () => {
+    setScreenHistory((history) => {
+      const previous = history[history.length - 1];
+      if (!previous) return history;
+      setScreen(previous);
+      return history.slice(0, -1);
+    });
+  };
 
   const routeFromNotificationData = (data: any) => {
     const rawType = String(data?.type ?? data?.target ?? data?.screen ?? '').trim().toLowerCase();
@@ -140,9 +164,24 @@ function ForceNativeSplashApp() {
   useEffect(() => {
     // Avoid blank screens if params are missing.
     if (screen === 'directions' && !directionsParams) {
-      setScreen('ai-detect');
+      navigateTo('ai-detect');
     }
   }, [directionsParams, screen]);
+
+  useEffect(() => {
+    if (Platform.OS !== 'android') return;
+
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (screen === 'native-splash' || screen === 'custom-splash') return true;
+      if (screenHistory.length > 0) {
+        goBack();
+        return true;
+      }
+      return false;
+    });
+
+    return () => sub.remove();
+  }, [goBack, screen, screenHistory.length]);
 
   const handleNotificationResponse = (response: ExpoNotifications.NotificationResponse | null | undefined) => {
     try {
@@ -170,11 +209,11 @@ function ForceNativeSplashApp() {
 
       if (!accessToken) {
         setPendingScreenAfterAuth(target.screen);
-        setScreen('login');
+        navigateTo('login');
         return;
       }
 
-      setScreen(target.screen);
+      navigateTo(target.screen);
     } catch (e) {
       console.log('Notification response routing failed:', e);
     }
@@ -218,17 +257,17 @@ function ForceNativeSplashApp() {
         console.log('3. Native splash hidden, showing custom splash');
         
         // Step 2: Show our custom animated splash
-        setScreen('custom-splash');
+        navigateTo('custom-splash');
         
         // Step 3: Keep custom splash for another 2 seconds
         splashTimer.current = setTimeout(() => {
           console.log('4. Custom splash complete, showing language selection');
-          setScreen('language');
+          navigateTo('language');
         }, 2000);
         
       } catch (error) {
         console.error('Error hiding splash:', error);
-        setScreen('language');
+        navigateTo('language');
       }
     }, 2000);
 
@@ -241,36 +280,36 @@ function ForceNativeSplashApp() {
 
   const handleLanguageSelected = () => {
     console.log('5. Language selected, showing intro slides');
-    setScreen('intro');
+    navigateTo('intro');
   };
 
   const goPostAuth = (user: any) => {
     const role = String(user?.role ?? '').toLowerCase();
     if (role === 'ambulance_staff') {
-      setScreen('ambulance-dashboard');
+      navigateTo('ambulance-dashboard');
       return;
     }
     if (pendingScreenAfterAuth) {
-      setScreen(pendingScreenAfterAuth);
+      navigateTo(pendingScreenAfterAuth);
       setPendingScreenAfterAuth(null);
       return;
     }
-    setScreen('patient-dashboard');
+    navigateTo('patient-dashboard');
   };
 
   const handleForgotPassword = () => {
     console.log('Forgot password pressed, showing forgot password screen');
-    setScreen('forgot-password');
+    navigateTo('forgot-password');
   };
 
   const handleRegister = () => {
     console.log('Register pressed (UI only)');
-    setScreen('register');
+    navigateTo('register');
   };
 
   const handleIntroDone = () => {
     console.log('Intro completed, showing login');
-    setScreen('login');
+    navigateTo('login');
   };
 
   // Show native splash (invisible to us, controlled by Expo)
@@ -320,9 +359,9 @@ function ForceNativeSplashApp() {
         onSendVerification={(email) => {
           console.log('Send verification pressed (UI only). Email:', email);
           setResetEmail(email);
-          setScreen('verification');
+          navigateTo('verification');
         }}
-        onBack={() => setScreen('login')}
+        onBack={goBack}
       />
     );
   }
@@ -334,9 +373,9 @@ function ForceNativeSplashApp() {
         email={resetEmail}
         onVerify={({ email, code, password, confirmPassword }) => {
           console.log('Verify pressed (UI only):', { email, code, passwordLen: password.length, confirmPasswordLen: confirmPassword.length });
-          setScreen('login');
+          navigateTo('login');
         }}
-        onBack={() => setScreen('forgot-password')}
+        onBack={goBack}
       />
     );
   }
@@ -348,9 +387,9 @@ function ForceNativeSplashApp() {
         onRegistered={(email) => {
           console.log('Register succeeded. Email:', email);
           setRegisterEmail(email);
-          setScreen('email-verification');
+          navigateTo('email-verification');
         }}
-        onBack={() => setScreen('login')}
+        onBack={goBack}
       />
     );
   }
@@ -367,7 +406,7 @@ function ForceNativeSplashApp() {
           saveAuth({ accessToken, refreshToken, role: String(user?.role ?? '') }).catch(() => {});
           goPostAuth(user);
         }}
-        onBack={() => setScreen('register')}
+        onBack={goBack}
       />
     );
   }
@@ -385,9 +424,9 @@ function ForceNativeSplashApp() {
           setPendingMedicineTake(null);
           setPendingPatientTab(null);
           setPendingScreenAfterAuth(null);
-          setScreen('login');
+          resetNavigation('login');
         }}
-        onOpenPatientDashboard={() => setScreen('patient-dashboard')}
+        onOpenPatientDashboard={() => navigateTo('patient-dashboard')}
       />
     );
   }
@@ -400,9 +439,9 @@ function ForceNativeSplashApp() {
         onConsumePendingMedicineTake={() => setPendingMedicineTake(null)}
         pendingTab={pendingPatientTab}
         onConsumePendingTab={() => setPendingPatientTab(null)}
-        onOpenAiDetect={() => setScreen('ai-detect')}
-        onOpenNotifications={() => setScreen('notifications')}
-        onOpenNearbyAmbulance={() => setScreen('nearby-ambulance')}
+        onOpenAiDetect={() => navigateTo('ai-detect')}
+        onOpenNotifications={() => navigateTo('notifications')}
+        onOpenNearbyAmbulance={() => navigateTo('nearby-ambulance')}
         onLogout={() => {
           setAccessToken('');
           setRefreshToken('');
@@ -412,7 +451,7 @@ function ForceNativeSplashApp() {
           setPendingMedicineTake(null);
           setPendingPatientTab(null);
           setPendingScreenAfterAuth(null);
-          setScreen('login');
+          resetNavigation('login');
         }}
       />
     );
@@ -427,7 +466,7 @@ function ForceNativeSplashApp() {
         >
           <AIWoundorRashDetect
             accessToken={accessToken}
-            onBack={() => setScreen('patient-dashboard')}
+            onBack={goBack}
             onOpenDirections={(p) => {
               setDirectionsParams({
                 backScreen: 'ai-detect',
@@ -435,7 +474,7 @@ function ForceNativeSplashApp() {
                 destination: p.destination,
                 destinationName: p.destinationName,
               });
-              setScreen('directions');
+              navigateTo('directions');
             }}
           />
         </View>
@@ -451,7 +490,7 @@ function ForceNativeSplashApp() {
               destinationName={directionsParams.destinationName}
               onBack={() => {
                 setDirectionsParams(null);
-                setScreen('ai-detect');
+                goBack();
               }}
             />
           ) : null}
@@ -467,33 +506,33 @@ function ForceNativeSplashApp() {
         activeTab="home"
         onSelectTab={(tab) => {
           setPendingPatientTab(tab);
-          setScreen('patient-dashboard');
+          navigateTo('patient-dashboard');
         }}
-        onBack={() => setScreen('patient-dashboard')}
+        onBack={goBack}
         onOpenNotificationType={(type) => {
           const t = String(type || '').trim().toLowerCase();
           if (t.includes('ambulance')) {
-            setScreen('nearby-ambulance');
+            navigateTo('nearby-ambulance');
             return;
           }
           if (t.includes('medicine')) {
             setPendingPatientTab('medicine');
-            setScreen('patient-dashboard');
+            navigateTo('patient-dashboard');
             return;
           }
           if (t.includes('clinic')) {
             setPendingPatientTab('clinic');
-            setScreen('patient-dashboard');
+            navigateTo('patient-dashboard');
             return;
           }
           if (t.includes('report')) {
             setPendingPatientTab('reports');
-            setScreen('patient-dashboard');
+            navigateTo('patient-dashboard');
             return;
           }
           if (t.includes('appointment')) {
             setPendingPatientTab('appointment');
-            setScreen('patient-dashboard');
+            navigateTo('patient-dashboard');
             return;
           }
         }}
@@ -502,34 +541,34 @@ function ForceNativeSplashApp() {
   }
 
   if (screen === 'nearby-ambulance') {
-    return <NearbyAmbulance accessToken={accessToken} onBack={() => setScreen('patient-dashboard')} />;
+    return <NearbyAmbulance accessToken={accessToken} onBack={goBack} />;
   }
 
   if (screen === 'ambulance-dashboard') {
     return (
       <AmbulanceStaffDashboard
         accessToken={accessToken}
-        onBack={() => setScreen('login')}
+        onBack={goBack}
         onLogout={() => {
           setAccessToken('');
           setRefreshToken('');
           setShareEnabled(false).catch(() => {});
           stopAmbulanceBackgroundLocationAsync().catch(() => {});
           clearAuth().catch(() => {});
-          setScreen('login');
+          resetNavigation('login');
         }}
       />
     );
   }
 
-  return <MainApp onLogout={() => setScreen('login')} />;
+  return <MainApp onLogout={() => resetNavigation('login')} />;
 }
 
 const styles = StyleSheet.create({
   fullScreen: {
     flex: 1,
-    backgroundColor: '#f8fafc',
-    justifyContent: 'center',
+    backgroundColor: '#fff',
     alignItems: 'center',
+    justifyContent: 'center',
   },
 });

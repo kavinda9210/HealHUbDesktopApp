@@ -27,17 +27,17 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const colors = useMemo<ThemePalette>(() => {
     if (mode === 'dark') {
       return {
-        background: '#0b1220',
-        card: '#0f172a',
-        text: '#e5e7eb',
-        subtext: '#a3b3c2',
-        border: '#223044',
-        // Muted accents for dark mode (avoid neon/luminous colors)
-        primary: '#2B7A57',
-        danger: '#b91c1c',
+        background: '#121212',    // deeper, neutral dark
+        card: '#1E1E1E',          // slightly lighter, still subdued
+        text: '#E0E0E0',          // soft off-white
+        subtext: '#A0A0A0',       // medium gray for secondary text
+        border: '#2C2C2C',        // subtle border
+        primary: '#5E8B7E',       // muted sage/teal – no neon
+        danger: '#B33A3A',        // desaturated red
       };
     }
 
+    // Light mode – unchanged
     return {
       background: '#ffffff',
       card: '#ffffff',

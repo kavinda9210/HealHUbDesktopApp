@@ -6,6 +6,7 @@ import { apiGet } from '../../../utils/api';
 import MapLibreView, { MAPLIBRE_STYLE_STREETS_URL } from '../../maps/MapLibreView';
 import { MapErrorBoundary } from '../../ambulance/MapErrorBoundary';
 import { buildStaticOsmMapUrl } from '../../ambulance/utils';
+import { useResolvedColors } from '../../../context/themeUtils';
 
 type PatientNotification = {
   notification_id: number;
@@ -31,10 +32,8 @@ function extractMetaValue(text: string | undefined | null, key: string): string 
 
 function extractPhoneLoose(text: string | undefined | null): string | null {
   if (!text) return null;
-  // Prefer a meta field if present.
   const meta = extractMetaValue(text, 'meta_ambulance_phone');
   if (meta) return meta;
-  // Fallback: try to parse from "Driver: name phone".
   const m = String(text).match(/Driver:\s*[^\n]*?([+]?\d[\d\s\-()]{6,})/i);
   if (m && m[1]) return String(m[1]).trim();
   return null;
@@ -49,7 +48,6 @@ function extractAmbulanceNumber(text: string | undefined | null): string | null 
 }
 
 function approxDistanceMeters(a: { lat: number; lng: number }, b: { lat: number; lng: number }): number {
-  // Equirectangular approximation; fine for small distances.
   const toRad = (x: number) => (x * Math.PI) / 180;
   const x = toRad(b.lng - a.lng) * Math.cos(toRad((a.lat + b.lat) / 2));
   const y = toRad(b.lat - a.lat);
@@ -57,6 +55,9 @@ function approxDistanceMeters(a: { lat: number; lng: number }, b: { lat: number;
 }
 
 export default function PatientAmbulanceStatusCard({ accessToken, language, colors, ambulanceStatus }: Props) {
+  // Allow callers to pass a partial colors object; merge with theme defaults so tokens exist.
+  const resolved = useResolvedColors(colors as any);
+  const palette = { card: resolved.card, text: resolved.text, subtext: resolved.subtext, border: resolved.border };
   const [trackedAmbulance, setTrackedAmbulance] = useState<{ lat: number; lng: number; lastUpdated?: string | null } | null>(null);
   const [trackedAvailable, setTrackedAvailable] = useState<boolean | null>(null);
   const [trackingError, setTrackingError] = useState<string>('');
@@ -78,8 +79,7 @@ export default function PatientAmbulanceStatusCard({ accessToken, language, colo
     return { lat, lng };
   }, [ambulanceStatus?.message]);
 
-  // Keep the patient's marker updated in realtime (no refresh required).
-  // We avoid prompting for permission here; if permission is already granted (likely from the request flow), we watch.
+  // Real-time patient location
   useEffect(() => {
     if (Platform.OS === 'web') return;
     if (!ambulanceStatus) {
@@ -116,12 +116,11 @@ export default function PatientAmbulanceStatusCard({ accessToken, language, colo
 
     return () => {
       cancelled = true;
-      try { sub?.remove(); } catch {
-        // ignore
-      }
+      try { sub?.remove(); } catch { /* ignore */ }
     };
   }, [ambulanceStatus]);
 
+  // Poll ambulance location
   useEffect(() => {
     let cancelled = false;
 
@@ -232,9 +231,12 @@ export default function PatientAmbulanceStatusCard({ accessToken, language, colo
     });
   }, [patientRequestCoords, trackedAmbulance]);
 
+  // Safely render map only if all required components are defined
+  const canRenderMap = typeof MapLibreView !== 'undefined' && typeof MapErrorBoundary !== 'undefined';
+
   return (
-    <View style={[styles.sectionCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-      <Text style={[styles.sectionTitle, { color: colors.text }]}>
+    <View style={[styles.sectionCard, { backgroundColor: palette.card, borderColor: palette.border }]}>
+      <Text style={[styles.sectionTitle, { color: palette.text }]}> 
         {language === 'sinhala'
           ? 'ඇම්බියුලන්ස් ඉල්ලීමේ තත්ත්වය'
           : language === 'tamil'
@@ -253,8 +255,8 @@ export default function PatientAmbulanceStatusCard({ accessToken, language, colo
       ) : (
         <View style={[styles.itemRow, { borderTopColor: colors.border }]}>
           <View style={{ flex: 1 }}>
-            <Text style={[styles.itemTitle, { color: colors.text }]}>{ambulanceStatus.title}</Text>
-            <Text style={[styles.itemSub, { color: colors.subtext }]} numberOfLines={3}>
+            <Text style={[styles.itemTitle, { color: palette.text }]}>{ambulanceStatus.title}</Text>
+            <Text style={[styles.itemSub, { color: palette.subtext }]} numberOfLines={3}>
               {ambulanceStatus.message}
             </Text>
           </View>
@@ -262,13 +264,13 @@ export default function PatientAmbulanceStatusCard({ accessToken, language, colo
       )}
 
       {!!trackingError && (
-        <Text style={[styles.cardText, { color: colors.subtext, marginTop: 8 }]}>
+        <Text style={[styles.cardText, { color: palette.subtext, marginTop: 8 }] }>
           {trackingError}
         </Text>
       )}
 
       {trackedAvailable === false && !!activeAmbulanceId && (
-        <Text style={[styles.cardText, { color: colors.subtext, marginTop: 8 }]}>
+        <Text style={[styles.cardText, { color: palette.subtext, marginTop: 8 }]}>
           {language === 'sinhala'
             ? 'ඇම්බියුලන්ස් ගමන් කරමින් ඇත.'
             : language === 'tamil'
@@ -280,25 +282,25 @@ export default function PatientAmbulanceStatusCard({ accessToken, language, colo
       {!!ambulancePhone && (
         <TouchableOpacity
           activeOpacity={0.85}
-          style={[styles.callBtn, { borderColor: colors.border }]}
+          style={[styles.callBtn, { borderColor: palette.border }]}
           onPress={() => {
             if (Platform.OS === 'web') return;
             void Linking.openURL(`tel:${encodeURIComponent(String(ambulancePhone))}`);
           }}
         >
-          <Text style={[styles.callBtnText, { color: colors.text }]}>
+          <Text style={[styles.callBtnText, { color: palette.text }]}>
             {language === 'sinhala'
               ? `ඇම්බියුලන්ස් අමතන්න${ambulanceNumber ? ` (${ambulanceNumber})` : ''}`
               : language === 'tamil'
                 ? `ஆம்புலன்ஸை அழைக்க${ambulanceNumber ? ` (${ambulanceNumber})` : ''}`
                 : `Call ambulance${ambulanceNumber ? ` (${ambulanceNumber})` : ''}`}
           </Text>
-          <Text style={[styles.callBtnSub, { color: colors.subtext }]}>{ambulancePhone}</Text>
+          <Text style={[styles.callBtnSub, { color: palette.subtext }]}>{ambulancePhone}</Text>
         </TouchableOpacity>
       )}
 
       {hasReached && (
-        <Text style={[styles.cardText, { color: colors.subtext, marginTop: 8 }]}> 
+        <Text style={[styles.cardText, { color: palette.subtext, marginTop: 8 }]}> 
           {language === 'sinhala'
             ? 'ඇම්බියුලන්ස් ඔබ වෙත ළඟා වී ඇත.'
             : language === 'tamil'
@@ -308,33 +310,33 @@ export default function PatientAmbulanceStatusCard({ accessToken, language, colo
       )}
 
       {trackedAvailable === true && !!activeAmbulanceId && (
-        <Text style={[styles.cardText, { color: colors.subtext, marginTop: 8 }]}>
+        <Text style={[styles.cardText, { color: palette.subtext, marginTop: 8 }]}>
           {language === 'sinhala'
-            ? 'ඇම්බියුලන්ස් දැන් ලබා ගත හැක (මෙහෙයුම අවසන් වී ඇති olabilir).'
+            ? 'ඇම්බියුලන්ස් දැන් ලබා ගත හැක (මෙහෙයුම අවසන් වී ඇත).'
             : language === 'tamil'
               ? 'ஆம்புலன்ஸ் தற்போது கிடைக்கிறது (பயணம் முடிந்திருக்கலாம்).'
               : 'Ambulance is now available (mission may be completed).'}
         </Text>
       )}
 
+      {/* Map section with fallback for undefined components */}
       {!!staticMapUrl && (
-        <View style={[styles.ambulanceMapWrap, { borderColor: colors.border }]}
-        >
+        <View style={[styles.ambulanceMapWrap, { borderColor: palette.border }]}>
           {Platform.OS === 'web' ? (
             <Image
               source={{ uri: staticMapUrl }}
               style={StyleSheet.absoluteFillObject}
               resizeMode="cover"
             />
-          ) : (
+          ) : canRenderMap ? (
             <MapErrorBoundary
-              fallback={(
+              fallback={
                 <Image
                   source={{ uri: staticMapUrl }}
                   style={StyleSheet.absoluteFillObject}
                   resizeMode="cover"
                 />
-              )}
+              }
             >
               <View style={StyleSheet.absoluteFillObject}>
                 <MapLibreView
@@ -344,7 +346,6 @@ export default function PatientAmbulanceStatusCard({ accessToken, language, colo
                   focus={patientRequestCoords ? { lat: patientRequestCoords.lat, lng: patientRequestCoords.lng, zoom: 14 } : null}
                   onLoadError={() => setMapStatus('error')}
                 />
-
                 {mapStatus === 'error' && (
                   <Image
                     source={{ uri: staticMapUrl }}
@@ -354,6 +355,12 @@ export default function PatientAmbulanceStatusCard({ accessToken, language, colo
                 )}
               </View>
             </MapErrorBoundary>
+          ) : (
+            <Image
+              source={{ uri: staticMapUrl }}
+              style={StyleSheet.absoluteFillObject}
+              resizeMode="cover"
+            />
           )}
         </View>
       )}

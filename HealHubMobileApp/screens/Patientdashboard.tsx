@@ -247,9 +247,11 @@ export default function Patientdashboard({
     | {
         title: string;
         created: string;
+        patientName?: string;
         doctor?: string;
         specialization?: string;
         link?: string;
+        nextClinicDate?: string;
         diagnosis?: string;
         prescription?: string;
         notes?: string;
@@ -319,13 +321,16 @@ export default function Patientdashboard({
     const created = String(report.created_at || '').slice(0, 10) || '';
     const doctor = report.doctor_name ? `Dr. ${report.doctor_name}` : '';
     const specialization = report.specialization ? String(report.specialization) : '';
-    const link = report.appointment_id ? `Appt #${String(report.appointment_id)}` : report.clinic_id ? `Clinic #${String(report.clinic_id)}` : '';
+    const nextClinicDate = report.clinic_id ? String(clinicById[String(report.clinic_id)]?.clinic_date || '') : '';
+    const visitLabel = report.appointment_id ? `Appt #${String(report.appointment_id)}` : report.clinic_id ? `Clinic #${String(report.clinic_id)}` : '';
     setReportDetailsCard({
       title: titleText,
       created,
+      patientName: user.fullName,
       doctor: doctor || undefined,
       specialization: specialization || undefined,
-      link: link || undefined,
+      nextClinicDate: nextClinicDate || undefined,
+      link: nextClinicDate ? undefined : visitLabel || undefined,
       diagnosis: report.diagnosis ? String(report.diagnosis) : undefined,
       prescription: report.prescription ? String(report.prescription) : undefined,
       notes: report.notes ? String(report.notes) : undefined,
@@ -613,7 +618,15 @@ export default function Patientdashboard({
   };
 
   const handleDownloadReportPdf = async (report: MedicalReportRow) => {
-    await downloadReportAsPdfAsync({ report, language, getLocalYyyyMmDd, showToast: showReminderToast });
+    const nextClinicDate = report.clinic_id ? String(clinicById[String(report.clinic_id)]?.clinic_date || '') : '';
+    await downloadReportAsPdfAsync({
+      report,
+      language,
+      getLocalYyyyMmDd,
+      showToast: showReminderToast,
+      patientName: user.fullName,
+      nextClinicDate: nextClinicDate || undefined,
+    });
   };
 
   return (

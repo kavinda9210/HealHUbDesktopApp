@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 import { Ionicons, MaterialCommunityIcons, FontAwesome5, Feather } from '@expo/vector-icons';
 import PatientAmbulanceStatusCard from '../../../components/patient/ambulance/PatientAmbulanceStatusCard';
+import { useResolvedColors } from '../../../context/themeUtils';
 import type { PatientTabKey } from '../../../components/patient/tabs';
 import type { ClinicRow, MedicalReportRow, PatientNotification } from '../types';
 
@@ -75,6 +76,8 @@ export default function HomeTab({
   onShowClinicDetails,
   onOpenReportDetails,
 }: HomeTabProps) {
+  // Ensure we have a complete palette: allow callers to pass a partial `colors` prop
+  const resolvedColors = useResolvedColors(colors as any);
   const homeSections = useMemo(() => ({
     medicines: homeMedicines,
     clinics: homeClinics,
@@ -139,17 +142,25 @@ export default function HomeTab({
         </ModernCard>
       )}
 
-      {/* ========== EMERGENCY CARD (red) – redesigned: top row icon + text, button below ========== */}
-      <View style={[styles.emergencyCard, { backgroundColor: colors.danger + '08', borderLeftColor: colors.danger, borderLeftWidth: 4 }]}>
+      {/* ========== EMERGENCY CARD (Nearby Ambulance) – improved colors and accessibility ========== */}
+      <View
+        style={[
+          styles.emergencyCard,
+          { backgroundColor: resolvedColors.danger + '08', borderLeftColor: resolvedColors.danger, borderLeftWidth: 4 },
+        ]}
+        accessible
+        accessibilityRole="summary"
+        accessibilityLabel={language === 'sinhala' ? 'ආසන්න ඇම්බියුලන්ස්' : language === 'tamil' ? 'அருகிலுள்ள ஆம்புலன்ஸ்' : 'Nearby ambulance card'}
+      >
         <View style={styles.emergencyTopRow}>
-          <View style={[styles.emergencyIconBg, { backgroundColor: colors.danger + '15' }]}>
-            <FontAwesome5 name="ambulance" size={28} color={colors.danger} />
+          <View style={[styles.emergencyIconBg, { backgroundColor: resolvedColors.danger + '15' }]}>
+            <FontAwesome5 name="ambulance" size={28} color={resolvedColors.danger} />
           </View>
           <View style={styles.emergencyTextWrapper}>
-            <Text style={[styles.emergencyTitle, { color: colors.text }]}>
+            <Text style={[styles.emergencyTitle, { color: resolvedColors.text }]}>
               {language === 'sinhala' ? 'ආසන්න ඇම්බියුලන්ස්' : language === 'tamil' ? 'அருகிலுள்ள ஆம்புலன்ஸ்' : 'Nearby Ambulance'}
             </Text>
-            <Text style={[styles.emergencySub, { color: colors.subtext }]}>
+            <Text style={[styles.emergencySub, { color: resolvedColors.subtext }]}> 
               {language === 'sinhala'
                 ? 'ස්ථානය සක්‍රීය කර ආසන්න ඇම්බියුලන්ස් සොයන්න'
                 : language === 'tamil'
@@ -159,10 +170,13 @@ export default function HomeTab({
           </View>
         </View>
         <TouchableOpacity
-          style={[styles.emergencyBtn, { backgroundColor: colors.danger }]}
+          accessibilityRole="button"
+          accessibilityLabel={language === 'sinhala' ? 'ආසන්න ඇම්බියුලන්ස් විවෘත කරන්න' : language === 'tamil' ? 'அருகிலுள்ள ஆம்புலன்ஸ் திற' : 'Open nearby ambulance'}
+          style={[styles.emergencyBtn, { backgroundColor: resolvedColors.danger }]}
           onPress={onOpenNearbyAmbulance}
+          activeOpacity={0.85}
         >
-          <Text style={styles.emergencyBtnText}>
+          <Text style={[styles.emergencyBtnText, { color: '#fff' }]}>
             {language === 'sinhala' ? 'විවෘත කරන්න' : language === 'tamil' ? 'திற' : 'Open'}
           </Text>
         </TouchableOpacity>
@@ -172,25 +186,33 @@ export default function HomeTab({
       <PatientAmbulanceStatusCard
         accessToken={accessToken}
         language={language}
-        colors={{ card: colors.card, text: colors.text, subtext: colors.subtext, border: colors.border }}
+        colors={{ card: resolvedColors.card, text: resolvedColors.text, subtext: resolvedColors.subtext, border: resolvedColors.border }}
         ambulanceStatus={ambulanceStatus}
       />
 
-      {/* ========== AI CARD (greenish) – redesigned: top row icon + text, button below ========== */}
-      <View style={[styles.aiCard, { backgroundColor: colors.primary + '05', borderLeftColor: colors.primary, borderLeftWidth: 4 }]}>
+      {/* ========== AI Card (Wound/Rash Detector) – improved contrast and theming ========== */}
+      <View
+        style={[
+          styles.aiCard,
+          { backgroundColor: resolvedColors.primary + '05', borderLeftColor: resolvedColors.primary, borderLeftWidth: 4 },
+        ]}
+        accessible
+        accessibilityRole="summary"
+        accessibilityLabel={language === 'sinhala' ? 'AI තුවාල හඳුනාගැනීම' : language === 'tamil' ? 'AI காயம் கண்டறிதல்' : 'AI wound detector card'}
+      >
         <View style={styles.aiTopRow}>
-          <View style={[styles.aiIconBg, { backgroundColor: colors.primary + '10' }]}>
-            <MaterialCommunityIcons name="brain" size={32} color={colors.primary} />
+          <View style={[styles.aiIconBg, { backgroundColor: resolvedColors.primary + '10' }]}>
+            <MaterialCommunityIcons name="brain" size={32} color={resolvedColors.primary} />
           </View>
           <View style={styles.aiTextWrapper}>
-            <Text style={[styles.aiTitle, { color: colors.text }]}>
+            <Text style={[styles.aiTitle, { color: resolvedColors.text }]}>
               {language === 'sinhala'
                 ? 'AI තුවාල/රෑෂ් හඳුනාගැනීම'
                 : language === 'tamil'
                 ? 'AI காயம்/ரேஷ் கண்டறிதல்'
                 : 'AI Wound / Rash Detector'}
             </Text>
-            <Text style={[styles.aiSub, { color: colors.subtext }]}>
+            <Text style={[styles.aiSub, { color: resolvedColors.subtext }]}> 
               {language === 'sinhala'
                 ? 'ඡායාරූපයක් ගෙන හෝ උඩුගත කර ප්‍රතිඵල බලන්න'
                 : language === 'tamil'
@@ -200,13 +222,16 @@ export default function HomeTab({
           </View>
         </View>
         <TouchableOpacity
-          style={[styles.aiButton, { backgroundColor: colors.background, borderColor: colors.primary + '30' }]}
+          accessibilityRole="button"
+          accessibilityLabel={language === 'sinhala' ? 'AI දසුන විවෘත කරන්න' : language === 'tamil' ? 'AI கண் திற' : 'Open AI detector'}
+          style={[styles.aiButton, { backgroundColor: resolvedColors.background, borderColor: resolvedColors.primary + '30' }]}
           onPress={onOpenAiDetect}
+          activeOpacity={0.9}
         >
-          <Text style={[styles.aiButtonText, { color: colors.primary }]}>
+          <Text style={[styles.aiButtonText, { color: resolvedColors.primary }]}> 
             {language === 'sinhala' ? 'විවෘත කරන්න' : language === 'tamil' ? 'திற' : 'Open'}
           </Text>
-          <Feather name="arrow-right" size={16} color={colors.primary} />
+          <Feather name="arrow-right" size={16} color={resolvedColors.primary} />
         </TouchableOpacity>
       </View>
 
@@ -343,7 +368,7 @@ export default function HomeTab({
         />
         {homeSections.recentAppointments.map((a, idx) => {
           const statusColor = a.status === 'Confirmed' ? '#10B981' : a.status === 'Pending' ? '#F59E0B' : '#EF4444';
-          const StatusIcon = a.status === 'Confirmed' ? MaterialCommunityIcons.CheckCircle : a.status === 'Pending' ? MaterialCommunityIcons.ClockOutline : MaterialCommunityIcons.CloseCircle;
+          const statusIconName = a.status === 'Confirmed' ? 'check-circle' : a.status === 'Pending' ? 'clock-outline' : 'close-circle';
           return (
             <View key={a.id} style={[styles.listItem, idx !== 0 && styles.listItemSeparator]}>
               <View style={styles.listIconWrapper}>
@@ -355,7 +380,7 @@ export default function HomeTab({
                 <Text style={[styles.listTitle, { color: colors.text }]}>{a.doctor}</Text>
                 <Text style={[styles.listSub, { color: colors.subtext }]}>{a.date} • {a.time}</Text>
                 <View style={styles.statusBadge}>
-                  <StatusIcon size={14} color={statusColor} />
+                  <MaterialCommunityIcons name={statusIconName} size={14} color={statusColor} />
                   <Text style={[styles.statusText, { color: statusColor }]}>{a.status}</Text>
                 </View>
               </View>
@@ -377,10 +402,10 @@ export default function HomeTab({
 }
 
 const styles = {
-  scrollContent: { paddingHorizontal: 16, paddingBottom: 24, gap: 16 },
-  card: { borderRadius: 20, borderWidth: 1, padding: 20, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.04, shadowRadius: 8, elevation: 2 },
-  sectionHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap' },
-  sectionTitle: { fontSize: 18, fontWeight: '600', letterSpacing: -0.3, lineHeight: 24, flexShrink: 1, flexWrap: 'wrap' },
+  scrollContent: { paddingHorizontal: 18, paddingBottom: 28, gap: 20 },
+  card: { borderRadius: 20, borderWidth: 1, padding: 24, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 10, elevation: 2 },
+  sectionHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18, flexWrap: 'wrap' },
+  sectionTitle: { fontSize: 20, fontWeight: '700', letterSpacing: -0.4, lineHeight: 26, flexShrink: 1, flexWrap: 'wrap' },
   viewAllButton: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 6, paddingHorizontal: 12, borderRadius: 20 },
   viewAllText: { fontSize: 13, fontWeight: '500' },
   loadingContainer: { alignItems: 'center', justifyContent: 'center', paddingVertical: 80, gap: 12 },
